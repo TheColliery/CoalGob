@@ -231,6 +231,14 @@ function isNonFileSink(target) {
   // gets `false`, the same "not a sink" answer a real ordinary path
   // would get.
   if (typeof target !== 'string') return false;
+  // An empty-string target is not a DEVICE sink, but shares the same
+  // exemption every caller here needs: CITED, verified live on this
+  // host's bash this round - `echo hi > ""` errors "No such file or
+  // directory" and creates NOTHING. An empty path is rejected outright,
+  // never a real file that gets truncated - the same "not a real
+  // destructible target" conclusion this function's callers already act
+  // on for every other non-file case.
+  if (target === '') return true;
   // Lexical normalization only (pure string op, no filesystem access -
   // ruling 3 holds) - collapses a trivially different spelling of the same
   // POSIX device path (`/dev/./null`, `/dev/../dev/null`) before comparing.
@@ -377,13 +385,29 @@ function tokenize(input) {
         if (input[i] === '-') { operand = '-'; i++; }
         else { while (i < n && /[0-9]/.test(input[i])) { operand += input[i]; i++; } }
         if (operand === '') {
-          // >&word (word is not -/digits) is bash's accepted synonym for
-          // &>word - a truncating redirect to a real file, never a
-          // descriptor operation (which requires an explicit -/digit
-          // operand). Same op shape &>'s own branch already emits, so the
-          // normal redirect-target consumption picks up the word that
-          // follows and classifyRedirectOp already routes it to truncate.
-          tokens.push({ type: 'op', value: '&>' });
+          if (fd === '') {
+            // >&word (fd OMITTED, word is not -/digits) is bash's
+            // accepted synonym for &>word - a truncating redirect to a
+            // real file, never a descriptor operation (which requires
+            // an explicit -/digit operand). Same op shape &>'s own
+            // branch already emits, so the normal redirect-target
+            // consumption picks up the word that follows and
+            // classifyRedirectOp already routes it to truncate.
+            tokens.push({ type: 'op', value: '&>' });
+          } else {
+            // n>&word (fd EXPLICIT, e.g. `2>&file`) is NOT the &>word
+            // synonym - CITED, verified live on this host's bash this
+            // round: `ls 2>&file` errors "ambiguous redirect" and
+            // creates NOTHING. The synonym is documented as conditional
+            // on fd being OMITTED; an explicit fd before `>&word` is a
+            // fd-duplication attempt with an invalid (non-digit, non
+            // `-`) operand - a hard error, never a truncating redirect.
+            // Emitted as a non-redirect op so its target word is still
+            // consumed (never leaks into the verb walk) but
+            // classifyRedirectOp's `other` fallthrough means it never
+            // truncates and never counts as fd-out-of-scope.
+            tokens.push({ type: 'op', value: 'ambiguous-redirect' });
+          }
           continue;
         }
         tokens.push({ type: 'op', value: `${fd || '1'}>&${operand}`, fdDup: true });

@@ -2287,6 +2287,38 @@ test('the whole mv --target-directory / --backup set resolves correctly', () => 
   }
 });
 
+// --- Group 72 (defence round 7, Set W3) - AXIS 5 (structural context -
+// an explicit fd changes what a following `&word` means; an empty
+// target is not a valid file target at all, regardless of device-list
+// membership). CITED SOURCE: bash's own redirection grammar, RUN live
+// on this host this round - `ls 2>&file` errors "ambiguous redirect"
+// and creates NOTHING (the `>&word` == `&>word` synonym is documented
+// as conditional on fd being OMITTED - an EXPLICIT fd before `>&word`
+// is a fd-duplication attempt with an invalid operand, a hard error,
+// never a truncating redirect to a named file); `echo hi > ""` errors
+// "No such file or directory" and creates NOTHING (an empty-string
+// path is rejected outright, not a device this parser already knows
+// about but still not a real file) ---
+// ships-if-missing (fd-discard): `ls 2>&file` is reported as DESTRUCTION
+// truncating `file`, although bash's own grammar makes this construct
+// an error that touches nothing.
+// ships-if-missing (empty target): `echo hi > ""` is reported as a
+// destruction with an EMPTY target field, a downstream hazard for any
+// remedy computed from it.
+test('the whole [n]>&word fd-discard and empty-target set resolves correctly', () => {
+  const cases = [
+    ['ls 2>&file', 'NO_MATCH'],
+    ['ls >& out.txt', 'DESTRUCTION'],
+    ['ls 2>& 1', 'NO_MATCH'],
+    ['echo hi > ""', 'NO_MATCH'],
+    ["echo hi > ''", 'NO_MATCH'],
+    ['echo hi > f', 'DESTRUCTION'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});
+
 test('no listed verb throws when invoked bare or with flags only', () => {
   for (const verb of EVERY_LISTED_VERB) {
     for (const cmd of [verb, `${verb} -f`, `${verb} --flag`]) {

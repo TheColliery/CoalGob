@@ -1507,3 +1507,45 @@ test('>&- (fd-close) is still NO_MATCH, unaffected by the >&word fix (control)',
 test('2>&1 (fd-dup) is still NO_MATCH, unaffected by the >&word fix (control)', () => {
   assert.equal(verdictOf('cmd 2>&1'), 'NO_MATCH');
 });
+
+// --- Group 48 (defence round 3, Set S6) - the bracket/paren CONTEXT set:
+// [[ ]] got positional gating in round 2 (Set H); arithmetic (( ))/$(( ))
+// never did, bracketDepth was never reset at a segment boundary, and a
+// QUOTED digit was still accepted as an fd-prefix. Boundary, stated: only
+// the exact two-char sequences `((`/`))` are tracked (a general nested-
+// parenthesis balance is not attempted, matching the existing word-0-only
+// treatment of a bare subshell) ---
+// ships-if-missing (arithmetic): `if (( count > 10 )); then ...` - an
+// ordinary numeric guard - reports DESTRUCTION on target `10`, because
+// the tokenizer has no arithmetic-context equivalent of bracketDepth.
+// ships-if-missing (segment reset): an unbalanced `[[` earlier in a
+// command line demotes a genuine truncating redirect in a LATER, wholly
+// unrelated segment - the worst class of miss, a real destruction hidden
+// behind unrelated syntax.
+// ships-if-missing (quoted fd): `echo "2">victim.txt` - a real stdout
+// truncation - is misfiled as unjudged, inflating the ceiling metric with
+// traffic the parser can in fact read (the Group K class again).
+test('the whole bracket/paren context set resolves correctly', () => {
+  const cases = [
+    ['if (( count > 10 )); then echo big; fi', 'NO_MATCH'],
+    ['while (( i > 0 )); do echo hi; done', 'NO_MATCH'],
+    ['echo $((a > b))', 'NO_MATCH'],
+    ['x=$(( a > b ))', 'NO_MATCH'],
+    ['echo hi > file', 'DESTRUCTION'],
+    ['[[ -f a ; echo hi > file', 'DESTRUCTION'],
+    ['echo "2">victim.txt', 'DESTRUCTION'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});
+
+test('a genuine destructive verb still reachable right after an arithmetic guard (control)', () => {
+  assert.equal(verdictOf('if (( count > 10 )); then rm x; fi'), 'DESTRUCTION');
+});
+
+test('echo "2">victim.txt is DESTRUCTION with the correct target, not just any verdict', () => {
+  const result = parseCommand('echo "2">victim.txt');
+  assert.equal(result.verdict, 'DESTRUCTION');
+  assert.equal(result.findings[0].target, 'victim.txt');
+});

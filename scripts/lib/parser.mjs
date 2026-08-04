@@ -235,10 +235,24 @@ function tokenize(input) {
   // comparison, never a redirect. Keys on `[[` specifically; single `[ ]`
   // is unaffected.
   let bracketDepth = 0;
+  // Depth of an open `(( ... ))`/`$(( ... ))` arithmetic context - inside
+  // it, `>`/`<` are numeric comparison, never a redirect. Keys on the
+  // exact two-char sequences `((`/`))` only - a general nested-parenthesis
+  // balance is not attempted (matching the existing word-0-only treatment
+  // of a bare subshell).
+  let parenDepth = 0;
+
+  // A SEGMENT_SEPARATORS op resets both depths - an unbalanced `[[`/`((`
+  // in one segment must never leak into a later, unrelated segment.
+  function pushSeparator(value) {
+    tokens.push({ type: 'op', value });
+    bracketDepth = 0;
+    parenDepth = 0;
+  }
 
   function fdPrefixAdjacent() {
     const last = tokens[tokens.length - 1];
-    return last && last.type === 'word' && /^[0-9]+$/.test(last.value) && last.end === i
+    return last && last.type === 'word' && !last.quoted && /^[0-9]+$/.test(last.value) && last.end === i
       ? tokens.pop().value
       : '';
   }
@@ -247,8 +261,8 @@ function tokenize(input) {
     const c = input[i];
 
     if (c === ' ' || c === '\t') { i++; continue; }
-    if (c === '\n') { tokens.push({ type: 'op', value: '\n' }); i++; continue; }
-    if (c === ';') { tokens.push({ type: 'op', value: ';' }); i++; continue; }
+    if (c === '\n') { pushSeparator('\n'); i++; continue; }
+    if (c === ';') { pushSeparator(';'); i++; continue; }
 
     // A backslash-newline line-continuation, occurring BETWEEN tokens (not
     // mid-word - that spelling is handled inside the word-scan loop below).
@@ -265,26 +279,27 @@ function tokenize(input) {
     }
 
     if (c === '|') {
-      if (input[i + 1] === '|') { tokens.push({ type: 'op', value: '||' }); i += 2; }
-      else { tokens.push({ type: 'op', value: '|' }); i++; }
+      if (input[i + 1] === '|') { pushSeparator('||'); i += 2; }
+      else { pushSeparator('|'); i++; }
       continue;
     }
 
     if (c === '&') {
-      if (input[i + 1] === '&') { tokens.push({ type: 'op', value: '&&' }); i += 2; continue; }
+      if (input[i + 1] === '&') { pushSeparator('&&'); i += 2; continue; }
       if (input[i + 1] === '>') {
         if (input[i + 2] === '>') { tokens.push({ type: 'op', value: '&>>' }); i += 3; }
         else { tokens.push({ type: 'op', value: '&>' }); i += 2; }
         continue;
       }
-      tokens.push({ type: 'op', value: '&' }); i++; continue;
+      pushSeparator('&'); i++; continue;
     }
 
     if (c === '>') {
       // Process substitution `>(...)` is not a redirect to a file - no
       // target is ever consumed, the whole construct becomes inert word
-      // tokens. Same for `>` inside an open `[[ ]]` test (string compare).
-      if (input[i + 1] === '(' || bracketDepth > 0) {
+      // tokens. Same for `>` inside an open `[[ ]]` test (string compare)
+      // or an open `(( ))`/`$(( ))` arithmetic context (numeric compare).
+      if (input[i + 1] === '(' || bracketDepth > 0 || parenDepth > 0) {
         tokens.push({ type: 'word', value: '>', end: i + 1 }); i++; continue;
       }
       const fd = fdPrefixAdjacent();
@@ -315,9 +330,9 @@ function tokenize(input) {
     }
 
     if (c === '<') {
-      // Process substitution `<(...)` and `<` inside an open `[[ ]]` test
-      // are not redirects either - same treatment as `>` above.
-      if (input[i + 1] === '(' || bracketDepth > 0) {
+      // Process substitution `<(...)`, `<` inside an open `[[ ]]` test, or
+      // `<` inside an open arithmetic context - same as `>` above.
+      if (input[i + 1] === '(' || bracketDepth > 0 || parenDepth > 0) {
         tokens.push({ type: 'word', value: '<', end: i + 1 }); i++; continue;
       }
       if (input[i + 1] === '<') {
@@ -356,7 +371,7 @@ function tokenize(input) {
           if (compareLine === delim) { terminated = true; break; }
         }
         if (!terminated) errors.push('unterminated heredoc');
-        tokens.push({ type: 'op', value: '\n' });
+        pushSeparator('\n');
       } else {
         fdPrefixAdjacent();
         tokens.push({ type: 'op', value: '<' }); i++;
@@ -370,6 +385,7 @@ function tokenize(input) {
     let value = '';
     const startI = i;
     let brokeOnError = false;
+    let sawQuote = false;
     while (i < n) {
       const ch = input[i];
       if (ch === ' ' || ch === '\t' || ch === '\n' || ';|&><'.includes(ch)) break;
@@ -379,11 +395,13 @@ function tokenize(input) {
         value += input[i + 1]; i += 2; continue;
       }
       if (ch === "'") {
+        sawQuote = true;
         const end = input.indexOf("'", i + 1);
         if (end === -1) { errors.push('unterminated single quote'); i = n; brokeOnError = true; break; }
         value += input.slice(i + 1, end); i = end + 1; continue;
       }
       if (ch === '"') {
+        sawQuote = true;
         let j = i + 1; let closed = false;
         while (j < n) {
           if (input[j] === '"') { closed = true; j++; break; }
@@ -393,12 +411,20 @@ function tokenize(input) {
         if (!closed) { errors.push('unterminated double quote'); i = n; brokeOnError = true; break; }
         i = j; continue;
       }
+      // An arithmetic context `((`/`))` - reached only for genuinely
+      // UNQUOTED characters (the quote branches above consume their own
+      // content directly, never falling through to here), so a literal
+      // "((" in an argument can never open one. Unlike `[[`, arithmetic
+      // is not restricted to command position - it is a legal expansion
+      // anywhere (`$((a>b))`, `x=$((...))`), so no position gate is needed.
+      if (ch === '(' && input[i + 1] === '(') { parenDepth++; value += '(('; i += 2; continue; }
+      if (ch === ')' && input[i + 1] === ')' && parenDepth > 0) { parenDepth--; value += '))'; i += 2; continue; }
       value += ch; i++;
     }
     if (brokeOnError && value === '' && i === startI + 1) continue;
     if (i > startI || value !== '') {
       const opensTest = value === '[[' && isCommandPosition(tokens);
-      tokens.push({ type: 'word', value, end: i });
+      tokens.push({ type: 'word', value, end: i, quoted: sawQuote });
       if (opensTest) bracketDepth++;
       else if (value === ']]' && bracketDepth > 0) bracketDepth--;
     }

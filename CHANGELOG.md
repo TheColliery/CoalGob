@@ -25,4 +25,5 @@ All notable changes to CoalGob are documented here. Format follows [Keep a Chang
   owed at first push.
 - `.githooks/` — `.gitattributes`' LF rule anticipates this dir (kept byte-identical to the sibling
   repos on purpose — "one flock, one color" costs less than a hand-trimmed variant) but it is inert
-  until the dir exists; owed if/when local git hooks are added.
+  until the dir exists; owed at the first build, since it is the only place the public-doc SSoT sync
+  gate (blueprint §13) can run — a CI job cannot see a gitignored `COALGOB_BLUEPRINT.md`.

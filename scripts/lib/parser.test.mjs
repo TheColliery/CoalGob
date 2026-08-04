@@ -2330,22 +2330,25 @@ test('the whole for-loop separator-elision set resolves correctly', () => {
 // `mv -t` invocation blocks unconditionally. ships-if-missing (c):
 // `mv --backup=numbered a b` is flagged as an unrecoverable
 // destruction although GNU mv itself just renamed the old `b` aside.
+// Targets updated (defence round 8, Set Y2a): every SOURCE is now its
+// own finding, not just the last - see 'mv reports every source under a
+// target directory, not just the last (Set Y2a)' for the dedicated test.
 test('the whole mv --target-directory / --backup set resolves correctly', () => {
   const cases = [
-    ['mv -t /tmp a b', 'DESTRUCTION', '/tmp/b'],
-    ['mv --target-directory=/tmp a b', 'DESTRUCTION', '/tmp/b'],
-    ['mv --target-directory /tmp a b', 'DESTRUCTION', '/tmp/b'],
-    ['mv -t /tmp src1 src2 src3', 'DESTRUCTION', '/tmp/src3'],
+    ['mv -t /tmp a b', 'DESTRUCTION', ['/tmp/a', '/tmp/b']],
+    ['mv --target-directory=/tmp a b', 'DESTRUCTION', ['/tmp/a', '/tmp/b']],
+    ['mv --target-directory /tmp a b', 'DESTRUCTION', ['/tmp/a', '/tmp/b']],
+    ['mv -t /tmp src1 src2 src3', 'DESTRUCTION', ['/tmp/src1', '/tmp/src2', '/tmp/src3']],
     ['mv --backup=numbered a b', 'NO_MATCH', undefined],
     ['mv --backup a b', 'NO_MATCH', undefined],
     ['mv -b a b', 'NO_MATCH', undefined],
-    ['mv a b', 'DESTRUCTION', 'b'],
+    ['mv a b', 'DESTRUCTION', ['b']],
   ];
-  for (const [cmd, expected, target] of cases) {
+  for (const [cmd, expected, targets] of cases) {
     const result = parseCommand(cmd);
     assert.equal(result.verdict, expected, cmd);
-    if (target !== undefined) {
-      assert.equal(result.findings[0].target, target, cmd);
+    if (targets !== undefined) {
+      assert.deepEqual(result.findings.map((f) => f.target), targets, cmd);
     }
   }
 });
@@ -2756,17 +2759,20 @@ test('the whole mv no-op set resolves correctly', () => {
 // finding, one branch fixed and its sibling not.
 // ships-if-missing: `mv a b c` reports `c` (a directory that must
 // already exist for the command to run at all, so this always "blocks")
-// instead of `c/b`, the real at-risk path.
+// instead of `c/b`, the real at-risk path. Targets updated (defence
+// round 8, Set Y2a): every source before the directory is its own
+// finding now, not just the last - see 'mv reports every source under a
+// target directory, not just the last (Set Y2a)' for the dedicated test.
 test('mv with 3+ operands and no -t treats the last as an implicit target directory', () => {
   const cases = [
-    ['mv a b', 'DESTRUCTION', 'b'],
-    ['mv a b c', 'DESTRUCTION', 'c/b'],
-    ['mv a b c d', 'DESTRUCTION', 'd/c'],
+    ['mv a b', 'DESTRUCTION', ['b']],
+    ['mv a b c', 'DESTRUCTION', ['c/a', 'c/b']],
+    ['mv a b c d', 'DESTRUCTION', ['d/a', 'd/b', 'd/c']],
   ];
-  for (const [cmd, expected, target] of cases) {
+  for (const [cmd, expected, targets] of cases) {
     const result = parseCommand(cmd);
     assert.equal(result.verdict, expected, cmd);
-    assert.equal(result.findings[0].target, target, cmd);
+    assert.deepEqual(result.findings.map((f) => f.target), targets, cmd);
   }
 });
 
@@ -2805,4 +2811,106 @@ test('conditional is false for an unconditional destruction, true for a runtime-
     assert.equal(result.verdict, 'DESTRUCTION', cmd);
     assert.equal(result.findings[0].conditional, expected, cmd);
   }
+});
+
+// --- Group 82 (defence round 8, Set Y1) - the ALL-OUTPUTS re-check's own
+// rank-1 empty cell: `analyzeDestructionVerb` (rm/rmdir/unlink/truncate/
+// del/remove-item - the MAJORITY of this parser's guarded verb list)
+// tracked a boolean (`hasPositional`) and discarded the token, so every
+// DESTRUCTION finding from this path carried NO `target` at all, for any
+// input. A remedy computed from the at-risk path cannot be built with
+// nothing to name. Multiple operands (`rm a b c`) now report one finding
+// PER path - the same "a segment carries N findings" model multi-segment
+// commands already use, extended one level down.
+// ships-if-missing: `rm -rf build` is DESTRUCTION with no target field;
+// `rm a b c` reports only ONE of the three files actually deleted.
+test('rm/rmdir/unlink/truncate/del/remove-item report every operand, one finding each (Set Y1)', () => {
+  const single = parseCommand('rm -rf build');
+  assert.equal(single.verdict, 'DESTRUCTION');
+  assert.equal(single.findings.length, 1);
+  assert.equal(single.findings[0].target, 'build');
+  assert.equal(single.findings[0].verb, 'rm');
+  assert.equal(single.findings[0].conditional, false);
+
+  const multi = parseCommand('rm a b c');
+  assert.equal(multi.verdict, 'DESTRUCTION');
+  assert.deepEqual(multi.findings.map((f) => f.target), ['a', 'b', 'c']);
+  assert.ok(multi.findings.every((f) => f.verb === 'rm' && f.conditional === false));
+
+  const truncateCase = parseCommand('truncate -s 0 file');
+  assert.equal(truncateCase.findings.length, 1);
+  assert.equal(truncateCase.findings[0].target, 'file');
+
+  // AXIS 6 (invocation channel) sibling check: the pipeline-bound
+  // Remove-Item shape (Set W6) has no LEXICAL target at all - this stays
+  // a single finding with no `target` field, not a regression, not a
+  // crash on an absent operand list.
+  const pipeBound = parseCommand('Get-ChildItem *.log | Remove-Item -Force');
+  assert.equal(pipeBound.verdict, 'DESTRUCTION');
+  assert.equal(pipeBound.findings.length, 1);
+  assert.equal(pipeBound.findings[0].target, undefined);
+  assert.equal(pipeBound.findings[0].conditional, true);
+});
+
+// --- Group 83 (defence round 8, Set Y2a) - AXIS 7 (SITE): the -t/
+// implicit-directory branches (Set W2/X1) already compute the real
+// at-risk path per source but only ever reported the LAST one - `mv -t
+// /tmp a b` moves BOTH a and b into /tmp; only /tmp/b was findable.
+// ships-if-missing: `mv -t /tmp a b` (or `mv a b c`) silently leaves one
+// of two real at-risk paths unreported; a remedy built from the finding
+// set rewrites one file and leaves the other genuinely destroyed.
+test('mv reports every source under a target directory, not just the last (Set Y2a)', () => {
+  const viaFlag = parseCommand('mv -t /tmp a b');
+  assert.equal(viaFlag.verdict, 'DESTRUCTION');
+  assert.deepEqual(viaFlag.findings.map((f) => f.target), ['/tmp/a', '/tmp/b']);
+
+  const viaArity = parseCommand('mv a b c');
+  assert.equal(viaArity.verdict, 'DESTRUCTION');
+  assert.deepEqual(viaArity.findings.map((f) => f.target), ['c/a', 'c/b']);
+
+  // The 2-operand form stays a single finding - still genuinely ambiguous
+  // (rename vs move-into-existing-directory) without a runtime stat
+  // (ruling 3), unaffected by this fix.
+  const twoOperand = parseCommand('mv a b');
+  assert.deepEqual(twoOperand.findings.map((f) => f.target), ['b']);
+});
+
+// --- Group 83b (defence round 8, Set Y2b) - AXIS 8 (BEHAVIOUR
+// EQUIVALENCE): the dispatch that ordered Group 83 asked to give
+// Move-Item the SAME "3+ positionals, last is a directory" treatment mv's
+// own arity branch just got, on the strength of Move-Item's `-Path`
+// parameter being array-typed. RAN before building it (this room's own
+// T4 precedent): `Move-Item -Force a b c` (space-separated, a real
+// command-line invocation, RUN live this session, PowerShell
+// 5.1.26100.8972) THROWS "A positional parameter cannot be found that
+// accepts argument 'dest'" and moves NOTHING - PowerShell's positional
+// binder fills Path with exactly one bare token, Destination with the
+// next, and has no third slot; array-typed does not mean array-greedy
+// for positional binding. mv's own grammar is arity-greedy; Move-Item's
+// is not - two constructs sharing a superficial shape do not thereby
+// share a behaviour, the exact question axis 8 exists to ask.
+// ships-if-missing: `Move-Item -Force a b c` is classified DESTRUCTION
+// with a fabricated target, for a command that touches no file at all.
+test('Move-Item with 3+ bare positionals is NO_MATCH - it throws and moves nothing (Set Y2b)', () => {
+  assert.equal(verdictOf('Move-Item -Force a b c'), 'NO_MATCH');
+  // The RAN-verified 2-operand form is unaffected (control).
+  assert.equal(verdictOf('Move-Item -Force a b'), 'DESTRUCTION');
+});
+
+// --- Group 84 (defence round 8, Set Y2c) - same "several paths at risk,
+// one reported" defect, a different SITE: `analyzeSegment`'s redirect
+// classification used `.find()` (first match only) over every truncating
+// redirect in a segment. CITED SOURCE: RAN live on this host's bash this
+// round - `echo hi > a > b` truncates BOTH a (emptied) and b (receives
+// "hi") - only the LAST redirect wins the write, but every earlier one
+// in the chain still opens (and truncates) its own target file.
+// ships-if-missing: `echo hi > a > b` reports only `a`; `b` is genuinely
+// truncated and invisible to any remedy built from the finding set.
+test('a segment with multiple real truncating redirects reports every one (Set Y2c)', () => {
+  const result = parseCommand('echo hi > a > b');
+  assert.equal(result.verdict, 'DESTRUCTION');
+  assert.deepEqual(result.findings.map((f) => f.target), ['a', 'b']);
+  assert.ok(result.findings.every((f) => f.conditional === false));
+  // Single-redirect segments are unaffected (control).
+  assert.deepEqual(parseCommand('> important.log').findings.map((f) => f.target), ['important.log']);
 });

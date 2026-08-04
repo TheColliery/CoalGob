@@ -852,15 +852,20 @@ function analyzeMv(args) {
     if (positional.length === 0 || targetDirectory.dir === undefined) {
       return { verdict: 'OUT_OF_SCOPE', reason: 'mv argument shape not recognized', kind: KIND_UNJUDGED };
     }
-    // The real at-risk path is DIRECTORY joined with the last SOURCE's
-    // own basename (pure string join, no filesystem access - ruling 3
-    // holds) - not the directory itself, which must already exist for
-    // the command to run at all and so would always "block" if reported.
+    // Every SOURCE moves into DIRECTORY (pure string join, no filesystem
+    // access - ruling 3 holds) - not the directory itself, which must
+    // already exist for the command to run at all and so would always
+    // "block" if reported. Set Y2a (defence round 8, ALL-OUTPUTS
+    // re-check, SITE): W2/X1 already computed this join correctly but
+    // only for the LAST source - `mv -t /tmp a b` moves BOTH a and b;
+    // one finding per source now, matching every source actually at risk.
     return {
       verdict: 'DESTRUCTION',
-      verb: 'mv',
-      target: posix.join(targetDirectory.dir, posix.basename(positional[positional.length - 1])),
-      conditional: true,
+      findings: positional.map((source) => ({
+        verb: 'mv',
+        target: posix.join(targetDirectory.dir, posix.basename(source)),
+        conditional: true,
+      })),
     };
   }
 
@@ -869,30 +874,25 @@ function analyzeMv(args) {
     // RUN live: "mv [OPTION]... SOURCE... DIRECTORY" - three or more
     // operands with no -t/--target-directory means the LAST operand IS
     // the destination DIRECTORY, the same concept -t names explicitly,
-    // triggered by ARITY instead of a flag (Set X1, defence round 8 -
-    // the ALL-OUTPUTS re-check's own finding: the -t branch above
-    // already computed the real at-risk path this way; this flagless
-    // form fell through to the 2-operand literal-rename branch below,
-    // reporting the DIRECTORY itself - a path that must already exist
-    // for the command to run at all, so it always "blocked"). Same
-    // convention the -t branch already uses for multiple sources: report
-    // the LAST source's own computed at-risk path as representative.
+    // triggered by ARITY instead of a flag (Set X1, defence round 8).
+    // Set Y2a: every source before the directory is its own at-risk
+    // path, not just the last.
     const directory = positional[positional.length - 1];
-    const lastSource = positional[positional.length - 2];
+    const sources = positional.slice(0, -1);
     return {
       verdict: 'DESTRUCTION',
-      verb: 'mv',
-      target: posix.join(directory, posix.basename(lastSource)),
-      conditional: true,
+      findings: sources.map((source) => ({
+        verb: 'mv',
+        target: posix.join(directory, posix.basename(source)),
+        conditional: true,
+      })),
     };
   }
 
   if (positional.length === 2) {
     return {
       verdict: 'DESTRUCTION',
-      verb: 'mv',
-      target: positional[1],
-      conditional: true,
+      findings: [{ verb: 'mv', target: positional[1], conditional: true }],
     };
   }
 
@@ -908,20 +908,38 @@ function analyzeMv(args) {
 // existing at runtime, the same model mv already has. `-Force`'s own
 // switch-value form (`-Force:$false` turns it OFF) is resolved by
 // isSwitchOn below - the same binding rule -WhatIf already gets.
+//
+// AXIS 8 (BEHAVIOUR EQUIVALENCE), Set Y2b (defence round 8, ALL-OUTPUTS
+// re-check): Y2a's dispatch asked to give Move-Item the SAME "3+
+// positionals, last is a directory" treatment mv's own -t/arity branches
+// just got, on the strength of `(Get-Command Move-Item).Parameters['Path']
+// .ParameterType` being `System.String[]` (array-typed - RUN live, this
+// session). RAN before building it, per this room's own T4 precedent - and
+// the two commands do NOT share this behaviour: `Move-Item -Force a b c`
+// (space-separated, real command-line binding - RUN live, this session,
+// PowerShell 5.1.26100.8972) THROWS "A positional parameter cannot be
+// found that accepts argument 'dest'" and moves nothing. PowerShell's
+// positional binder fills Path with exactly ONE bare token (array-typed
+// does not mean array-GREEDY for positional binding), Destination with
+// the next, and has no third slot - unlike mv's own SOURCE... DIRECTORY
+// grammar, which is arity-greedy by design. Classified NO_MATCH, not
+// DESTRUCTION: this is not an unrecognized shape, it is a CITED, RUN-
+// verified no-op.
 function analyzeMoveItem(args) {
   const hasForce = args.some((w) => isSwitchOn(w.value, '-force'));
   if (!hasForce) {
     return { verdict: 'NO_MATCH' };
   }
-  const positional = args.filter((w) => !(w.value.length > 1 && w.value.startsWith('-')));
+  const positional = args.filter((w) => !(w.value.length > 1 && w.value.startsWith('-'))).map((w) => w.value);
   if (positional.length === 0) {
     return { verdict: 'OUT_OF_SCOPE', reason: 'Move-Item argument shape not recognized', kind: KIND_UNJUDGED };
   }
+  if (positional.length >= 3) {
+    return { verdict: 'NO_MATCH' };
+  }
   return {
     verdict: 'DESTRUCTION',
-    verb: 'move-item',
-    target: positional[positional.length - 1].value,
-    conditional: true,
+    findings: [{ verb: 'move-item', target: positional[positional.length - 1], conditional: true }],
   };
 }
 
@@ -988,6 +1006,13 @@ function isColonValueFlag(verbLower, value) {
   const idx = value.indexOf(':');
   if (idx <= 0 || idx >= value.length - 1) return false;
   return !isWhatIfName(value.slice(0, idx).toLowerCase());
+}
+
+// The real operand behind a colon-bound flag (`-Path:foo.txt` ->
+// `foo.txt`) - isColonValueFlag has already confirmed this shape; this
+// only extracts the value half for reporting as a target (Set Y1).
+function colonFlagValue(value) {
+  return value.slice(value.indexOf(':') + 1);
 }
 
 // A dry-run/help flag that means "destroys nothing", scoped to the one verb
@@ -1083,16 +1108,24 @@ function isValueTakingFlag(verbLower, value) {
 function analyzeDestructionVerb(verbLower, args, precededByPipe) {
   let endOptions = false;
   let sawNoOpFlag = false;
-  let hasPositional = false;
+  // Set Y1 (defence round 8, ALL-OUTPUTS re-check, SITE): this loop used
+  // to track a boolean (`hasPositional`) and discard every token it
+  // examined - the single largest empty cell the re-check found, since
+  // `analyzeMv`/`analyzeMoveItem`/the redirect-classification path all
+  // already capture and report the real operand. Same push conditions as
+  // the boolean version (nothing new is now counted as an operand that
+  // was not already counted as "positional presence" before) - only the
+  // VALUE is kept instead of thrown away.
+  const targets = [];
   for (let i = 0; i < args.length; i++) {
     const w = args[i].value;
     if (!endOptions && w === '--') { endOptions = true; continue; }
     if (!endOptions && isNoOpFlag(verbLower, w)) { sawNoOpFlag = true; continue; }
     if (!endOptions && isWindowsSwitch(verbLower, w)) continue;
     if (!endOptions && isValueTakingFlag(verbLower, w)) { i++; continue; }
-    if (!endOptions && isColonValueFlag(verbLower, w)) { hasPositional = true; continue; }
+    if (!endOptions && isColonValueFlag(verbLower, w)) { targets.push(colonFlagValue(w)); continue; }
     if (!endOptions && w.length > 1 && w.startsWith('-')) continue;
-    hasPositional = true;
+    targets.push(w);
   }
   if (sawNoOpFlag) {
     return { verdict: 'NO_MATCH' };
@@ -1106,7 +1139,7 @@ function analyzeDestructionVerb(verbLower, args, precededByPipe) {
       return { verdict: 'NO_MATCH' };
     }
   }
-  if (!hasPositional) {
+  if (targets.length === 0) {
     // AXIS 6 (invocation channel, Set W6 defence round 7): Remove-Item's
     // -Path parameter binds FROM THE PIPELINE, PowerShell's own
     // documented binding model - "no positional operand" is not "no
@@ -1114,17 +1147,19 @@ function analyzeDestructionVerb(verbLower, args, precededByPipe) {
     // Scoped to remove-item only: POSIX verbs (rm/rmdir/unlink/
     // truncate/del) read argv, not stdin, so a POSIX `cmd | rm` does
     // not feed rm an operand this way and this exemption must not
-    // apply to them.
+    // apply to them. No LEXICAL target exists here - the real path only
+    // exists upstream of the pipe, outside this segment - so this finding
+    // carries no `target` at all (unchanged from before Set Y1).
     if (verbLower === 'remove-item' && precededByPipe) {
-      return { verdict: 'DESTRUCTION', verb: verbLower, conditional: true };
+      return { verdict: 'DESTRUCTION', findings: [{ verb: verbLower, conditional: true }] };
     }
-    // No operand at all - nothing for this verb to destroy. Known
-    // imprecision, accepted: a flag's own VALUE (e.g. truncate's `-s 0`)
-    // also counts as positional here, since it does not start with `-`;
-    // harmless while a real file operand is always present alongside it.
+    // No operand at all - nothing for this verb to destroy.
     return { verdict: 'NO_MATCH' };
   }
-  return { verdict: 'DESTRUCTION', verb: verbLower, conditional: false };
+  return {
+    verdict: 'DESTRUCTION',
+    findings: targets.map((target) => ({ verb: verbLower, target, conditional: false })),
+  };
 }
 
 // Set-Content always overwrites (never appends); an empty -Value is the
@@ -1358,9 +1393,18 @@ function analyzeSegment(tokens, precededByPipe) {
   }
 
   const classified = redirects.map((r) => ({ ...r, kind: classifyRedirectOp(r.op) }));
-  const truncating = classified.find((r) => r.kind === 'truncate' && !isNonFileSink(r.target));
-  if (truncating) {
-    return { verdict: 'DESTRUCTION', verb: truncating.op, target: truncating.target, conditional: false };
+  // Set Y2c (defence round 8, ALL-OUTPUTS re-check, SITE): a segment can
+  // open more than one real truncating redirect (`echo hi > a > b`,
+  // CITED SOURCE RUN live this round - BOTH a and b are opened and
+  // truncated; only the LAST one wins the write). `.find()` reported the
+  // first only, silently dropping every sibling target this parser had
+  // already classified correctly.
+  const truncatingRedirects = classified.filter((r) => r.kind === 'truncate' && !isNonFileSink(r.target));
+  if (truncatingRedirects.length > 0) {
+    return {
+      verdict: 'DESTRUCTION',
+      findings: truncatingRedirects.map((r) => ({ verb: r.op, target: r.target, conditional: false })),
+    };
   }
   // A non-stdout fd redirect to a non-file sink (`2>/dev/null`) truncates
   // nothing - the null-sink check applies to any fd, not only fd 1, so it
@@ -1445,7 +1489,16 @@ export function parseCommand(input) {
     .map((seg) => analyzeSegment(seg.tokens, seg.precededByPipe))
     .filter((r) => r.verdict !== 'NO_MATCH');
 
-  const destructions = results.filter((r) => r.verdict === 'DESTRUCTION');
+  // Set Y1/Y2 (defence round 8, ALL-OUTPUTS re-check): a DESTRUCTION
+  // result now carries its own `findings` array (one entry per real
+  // at-risk path - a segment can destroy more than one) instead of a
+  // single flat verb/target/conditional. Flattened here, once, so every
+  // upstream producer (analyzeDestructionVerb/analyzeMv/analyzeMoveItem/
+  // the redirect-truncate branch) only ever builds the internal shape,
+  // never the public one.
+  const destructions = results
+    .filter((r) => r.verdict === 'DESTRUCTION')
+    .flatMap((r) => r.findings.map((f) => ({ verdict: 'DESTRUCTION', ...f })));
   if (destructions.length > 0) return { verdict: 'DESTRUCTION', findings: destructions };
 
   const outOfScope = results.filter((r) => r.verdict === 'OUT_OF_SCOPE');

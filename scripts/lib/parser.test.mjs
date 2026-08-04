@@ -271,11 +271,16 @@ test('mv a b is a conditional destruction, not unconditional', () => {
   assert.equal(result.findings[0].target, 'b');
 });
 
-test('mv -t DIR src is a conditional destruction with the -t target', () => {
+test('mv -t DIR src is a conditional destruction with the real at-risk path (defence round 7, Set W2)', () => {
+  // Corrected in round 7 (W2): reporting the DIRECTORY itself was the
+  // bug (a directory that must already exist for the command to run at
+  // all always "blocks") - the real at-risk path is DIRECTORY joined
+  // with the source's own basename. See 'the whole mv --target-
+  // directory / --backup set resolves correctly'.
   const result = parseCommand('mv -t /dest a');
   assert.equal(result.verdict, 'DESTRUCTION');
   assert.equal(result.findings[0].conditional, true);
-  assert.equal(result.findings[0].target, '/dest');
+  assert.equal(result.findings[0].target, '/dest/a');
 });
 
 test('mv with an unparseable arg shape is OUT_OF_SCOPE, not a crash and not NONE', () => {
@@ -2230,6 +2235,55 @@ test('the whole for-loop separator-elision set resolves correctly', () => {
   ];
   for (const [cmd, expected] of cases) {
     assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});
+
+// --- Group 71 (defence round 7, Set W2) - AXES 1 (spelling - the long
+// `--target-directory` form of `-t` was entirely unrecognized) and 3
+// (override order does not apply here, but the SAME "one option, more
+// than one code-checked spelling" completeness failure the axis
+// derivation groups under axis 1's option-table sense). CITED SOURCE:
+// `mv --help`, RUN live on this host - "-t, --target-directory=
+// DIRECTORY move all SOURCE arguments into DIRECTORY" and
+// "--backup[=CONTROL] ... -b (like --backup but does not accept an
+// argument)". Three defects, one table:
+//   (a) `--target-directory`/`--target-directory=DIR` were not
+//       recognized at all, so a real DIRECTORY word was miscounted as
+//       a SOURCE and the WRONG file reported as the target;
+//   (b) even the already-recognized `-t DIR` reported the DIRECTORY
+//       itself as the conditional target - a directory that must
+//       already exist for the command to run at all, so `mv -t` ALWAYS
+//       blocked regardless of whether anything was overwritten. Fixed:
+//       the target is now the real at-risk path, DIRECTORY joined with
+//       the last SOURCE's basename (pure string join, no filesystem
+//       access - ruling 3 holds);
+//   (c) `--backup`/`-b` is GNU mv's OWN recoverability switch - the
+//       existing target is renamed, never lost. Under this room's own
+//       founding ruling (recoverability, per operation), the one mv
+//       spelling that is PROVABLY recoverable was being flagged anyway
+//       - the exact inversion of the design ---
+// ships-if-missing (a,b): `mv -t /tmp a b` reports `/tmp` as the
+// conditional target - a directory that always exists - so every
+// `mv -t` invocation blocks unconditionally. ships-if-missing (c):
+// `mv --backup=numbered a b` is flagged as an unrecoverable
+// destruction although GNU mv itself just renamed the old `b` aside.
+test('the whole mv --target-directory / --backup set resolves correctly', () => {
+  const cases = [
+    ['mv -t /tmp a b', 'DESTRUCTION', '/tmp/b'],
+    ['mv --target-directory=/tmp a b', 'DESTRUCTION', '/tmp/b'],
+    ['mv --target-directory /tmp a b', 'DESTRUCTION', '/tmp/b'],
+    ['mv -t /tmp src1 src2 src3', 'DESTRUCTION', '/tmp/src3'],
+    ['mv --backup=numbered a b', 'NO_MATCH', undefined],
+    ['mv --backup a b', 'NO_MATCH', undefined],
+    ['mv -b a b', 'NO_MATCH', undefined],
+    ['mv a b', 'DESTRUCTION', 'b'],
+  ];
+  for (const [cmd, expected, target] of cases) {
+    const result = parseCommand(cmd);
+    assert.equal(result.verdict, expected, cmd);
+    if (target !== undefined) {
+      assert.equal(result.findings[0].target, target, cmd);
+    }
   }
 });
 

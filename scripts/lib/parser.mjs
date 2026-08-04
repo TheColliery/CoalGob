@@ -662,6 +662,35 @@ function lastMvOverride(args) {
   return last;
 }
 
+// GNU mv's OWN recoverability switch, CITED SOURCE `mv --help` RUN live:
+// "--backup[=CONTROL] make a backup of each existing destination file"
+// and "-b (like --backup but does not accept an argument)" - the
+// existing target is RENAMED, never lost. Under this room's own founding
+// ruling (recoverability is per-OPERATION), the one mv spelling that is
+// PROVABLY recoverable must not be flagged - the exact inversion of the
+// design otherwise. Scoped to the exact spellings cited: a clustered `-b`
+// (e.g. `-vb`) is a named, uncited boundary, not attempted here.
+function isMvBackupFlag(v) {
+  return v === '-b' || v === '--backup' || v.startsWith('--backup=');
+}
+
+// mv's DESTINATION-selection option, CITED SOURCE `mv --help` RUN live:
+// "-t, --target-directory=DIRECTORY move all SOURCE arguments into
+// DIRECTORY" - short form, `=`-joined long form, and space-separated
+// long form all name a DIRECTORY, never a SOURCE. AXIS 1 (spelling): the
+// long form was entirely unrecognized before this fix, so its own value
+// word was miscounted as a SOURCE. Returns the directory value and,
+// for the space-separated forms, the array index of that value word so
+// the caller can exclude it from the source list.
+function mvTargetDirectory(args) {
+  for (let i = 0; i < args.length; i++) {
+    const v = args[i].value;
+    if (v === '-t' || v === '--target-directory') return { dir: args[i + 1]?.value, skipIdx: i + 1 };
+    if (v.startsWith('--target-directory=')) return { dir: v.slice('--target-directory='.length), skipIdx: -1 };
+  }
+  return null;
+}
+
 function analyzeMv(args) {
   // A bare invocation (no operands at all) touches nothing - the same
   // "no positional argument" exemption class analyzeDestructionVerb
@@ -675,6 +704,9 @@ function analyzeMv(args) {
   if (args.length === 0 || args.some((w) => isNoOpFlag('mv', w.value))) {
     return { verdict: 'NO_MATCH' };
   }
+  if (args.some((w) => isMvBackupFlag(w.value))) {
+    return { verdict: 'NO_MATCH' };
+  }
   if (lastMvOverride(args) === 'n') {
     // -n winning (by argument order, across every spelling and cluster)
     // guarantees mv never overwrites an existing target - the one mv
@@ -682,17 +714,32 @@ function analyzeMv(args) {
     // exemption truncate's grow already gets.
     return { verdict: 'NO_MATCH' };
   }
-  const tIdx = args.findIndex((w) => w.value === '-t');
-  if (tIdx !== -1 && args[tIdx + 1]) {
-    return { verdict: 'DESTRUCTION', verb: 'mv', target: args[tIdx + 1].value, conditional: true };
-  }
 
+  const targetDirectory = mvTargetDirectory(args);
   let endOptions = false;
   const positional = [];
-  for (const w of args) {
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i];
     if (!endOptions && w.value === '--') { endOptions = true; continue; }
+    if (targetDirectory && i === targetDirectory.skipIdx) continue;
     if (!endOptions && w.value.length > 1 && w.value.startsWith('-')) continue;
     positional.push(w.value);
+  }
+
+  if (targetDirectory) {
+    if (positional.length === 0 || targetDirectory.dir === undefined) {
+      return { verdict: 'OUT_OF_SCOPE', reason: 'mv argument shape not recognized', kind: KIND_UNJUDGED };
+    }
+    // The real at-risk path is DIRECTORY joined with the last SOURCE's
+    // own basename (pure string join, no filesystem access - ruling 3
+    // holds) - not the directory itself, which must already exist for
+    // the command to run at all and so would always "block" if reported.
+    return {
+      verdict: 'DESTRUCTION',
+      verb: 'mv',
+      target: posix.join(targetDirectory.dir, posix.basename(positional[positional.length - 1])),
+      conditional: true,
+    };
   }
 
   if (positional.length >= 2) {

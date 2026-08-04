@@ -1957,3 +1957,24 @@ test('the whole ANSI-C / locale quoting set resolves correctly', () => {
     assert.equal(verdictOf(cmd), expected, cmd);
   }
 });
+
+// --- Group 62 (defence round 5, Set U7) - the `cp` null-sink SOURCE
+// check must find the source positionally, not assume it is args[0].
+// The room already NAMES `cp` from a null-sink as a destroyer it
+// declines to route - the check itself was positional-only, so any
+// flag in front of the source defeated it ---
+// ships-if-missing: `cp -f /dev/null f` truncates `f` exactly as the
+// routed spelling does, but reports NO_MATCH because `/dev/null` was
+// not args[0].
+test('the whole cp null-sink-source set resolves correctly', () => {
+  const cases = [
+    ['cp /dev/null f', 'OUT_OF_SCOPE'],
+    ['cp -f /dev/null f', 'OUT_OF_SCOPE'],
+    ['cp -v -f /dev/null f', 'OUT_OF_SCOPE'],
+    ['cp a b', 'NO_MATCH'],
+    ['cp -f a b', 'NO_MATCH'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});

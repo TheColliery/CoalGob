@@ -119,6 +119,16 @@ function isFlagShaped(w) {
   return w.length > 1 && w.startsWith('-');
 }
 
+// The first non-flag argument - a verb's own SOURCE/positional operand,
+// wherever a boolean flag may sit in front of it. Deliberately narrower
+// than a full option-grammar walk: it skips any flag-shaped token but
+// never a flag's OWN value (a caller with a value-taking flag ahead of
+// its positional needs its own table, the same boundary sudo/truncate/mv
+// already state for their own grammars).
+function firstPositional(args) {
+  return args.find((w) => !isFlagShaped(w.value))?.value;
+}
+
 // Value-taking sudo SHORT flags: the token right after one is an argument
 // (a user/group/prompt/etc.), never a command word. `-h` is NOT here - it
 // is boolean (--help), not value-taking; putting it here swallowed the
@@ -879,9 +889,15 @@ function classifyVerb(verb, verbLower, args, heredoc, fdOutOfScope) {
   if (NAMED_DESTROYER_VERBS.has(verbLower)) {
     return { verdict: 'OUT_OF_SCOPE', reason: `${verbLower} is a direct destroyer this parser does not route`, kind: KIND_UNROUTED };
   }
-  if (verbLower === 'cp' && isNonFileSink(args[0]?.value)) {
+  if (verbLower === 'cp' && isNonFileSink(firstPositional(args))) {
     // Copying FROM a null-sink source truncates the target - an ordinary
-    // `cp a b` (copy is not in scope) is unaffected.
+    // `cp a b` (copy is not in scope) is unaffected. CITED SOURCE: `cp
+    // --help`, RUN live - SOURCE is a positional operand in every one of
+    // cp's own usage forms, so a flag in front of it (`-f`, `-v`, any
+    // boolean short/long form) must not defeat this check the way
+    // `args[0]` did. Boundary, stated: `-t DIRECTORY` (cp's one
+    // VALUE-taking short flag before SOURCE) is not resolved here - it
+    // is a separate, uncited claim this fix does not make.
     return { verdict: 'OUT_OF_SCOPE', reason: 'cp from a null-sink source truncates its target', kind: KIND_UNROUTED };
   }
   if (

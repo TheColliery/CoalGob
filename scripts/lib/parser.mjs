@@ -179,6 +179,10 @@ function tokenize(input) {
   const errors = [];
   const n = input.length;
   let i = 0;
+  // Depth of an open `[[ ... ]]` test - inside it, `<`/`>` are string
+  // comparison, never a redirect. Keys on `[[` specifically; single `[ ]`
+  // is unaffected.
+  let bracketDepth = 0;
 
   function fdPrefixAdjacent() {
     const last = tokens[tokens.length - 1];
@@ -193,6 +197,15 @@ function tokenize(input) {
     if (c === ' ' || c === '\t') { i++; continue; }
     if (c === '\n') { tokens.push({ type: 'op', value: '\n' }); i++; continue; }
     if (c === ';') { tokens.push({ type: 'op', value: ';' }); i++; continue; }
+
+    // A `#` reaching this point is at word-boundary position (a mid-word
+    // `#` never gets here - it is absorbed into the word-scanning branch
+    // below, matching real bash). Comment runs to end of line; the
+    // newline itself is left for normal segment-separator handling.
+    if (c === '#') {
+      while (i < n && input[i] !== '\n') i++;
+      continue;
+    }
 
     if (c === '|') {
       if (input[i + 1] === '|') { tokens.push({ type: 'op', value: '||' }); i += 2; }
@@ -211,6 +224,12 @@ function tokenize(input) {
     }
 
     if (c === '>') {
+      // Process substitution `>(...)` is not a redirect to a file - no
+      // target is ever consumed, the whole construct becomes inert word
+      // tokens. Same for `>` inside an open `[[ ]]` test (string compare).
+      if (input[i + 1] === '(' || bracketDepth > 0) {
+        tokens.push({ type: 'word', value: '>', end: i + 1 }); i++; continue;
+      }
       const fd = fdPrefixAdjacent();
       if (input[i + 1] === '&') {
         // fd-duplication (`2>&1`) or fd-close (`>&-`) - a descriptor
@@ -229,6 +248,11 @@ function tokenize(input) {
     }
 
     if (c === '<') {
+      // Process substitution `<(...)` and `<` inside an open `[[ ]]` test
+      // are not redirects either - same treatment as `>` above.
+      if (input[i + 1] === '(' || bracketDepth > 0) {
+        tokens.push({ type: 'word', value: '<', end: i + 1 }); i++; continue;
+      }
       if (input[i + 1] === '<') {
         if (input[i + 2] === '<') { tokens.push({ type: 'op', value: '<<<' }); i += 3; continue; }
         const opValue = input[i + 2] === '-' ? '<<-' : '<<';
@@ -304,7 +328,11 @@ function tokenize(input) {
       value += ch; i++;
     }
     if (brokeOnError && value === '' && i === startI + 1) continue;
-    if (i > startI || value !== '') tokens.push({ type: 'word', value, end: i });
+    if (i > startI || value !== '') {
+      tokens.push({ type: 'word', value, end: i });
+      if (value === '[[') bracketDepth++;
+      else if (value === ']]' && bracketDepth > 0) bracketDepth--;
+    }
   }
 
   return { tokens, errors };

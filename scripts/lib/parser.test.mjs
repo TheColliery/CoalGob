@@ -948,3 +948,51 @@ test('rm --help with no redirect is still plain NO_MATCH (control)', () => {
 test('truncate -s +10 with no redirect is still plain NO_MATCH (control)', () => {
   assert.equal(verdictOf('truncate -s +10 f'), 'NO_MATCH');
 });
+
+// --- Group 35 (work unit, Group D1 - tokenizer trio, bundled per the
+// head's own ruling since all three touch the same operator-dispatch
+// if-chain in tokenize()) ---
+
+// D1a - `#` starts a comment at word-boundary position only; mid-word it
+// stays a literal character (real bash behavior).
+// ships-if-missing: a redirect written inside a trailing comment is read as
+// a live redirect and truncates a file that was never going to be touched.
+test('a redirect inside a trailing # comment is not a live redirect', () => {
+  assert.equal(verdictOf('ls # write results > notes.txt'), 'NO_MATCH');
+});
+
+test('an ordinary annotated command line is not blocked by its own comment', () => {
+  assert.equal(verdictOf('npm test # old output > notes.txt'), 'NO_MATCH');
+});
+
+test('a mid-word # is not a comment start (control)', () => {
+  assert.equal(verdictOf('rm foo#bar.txt'), 'DESTRUCTION');
+});
+
+// D1b - `[[ ]]` string comparison: `>`/`<` inside a double-bracket test are
+// not redirects. Single `[ ]` is unaffected (bracketDepth keys on `[[`
+// specifically).
+// ships-if-missing: the version-compare idiom `[[ $a > $b ]]` is blocked as
+// a truncating redirect - bash creates no file at all.
+test('> inside [[ ]] is a string comparison, not a redirect', () => {
+  assert.equal(verdictOf('[[ $a > $b ]]'), 'NO_MATCH');
+});
+
+test('the realistic if [[ ... ]] spelling of the same idiom', () => {
+  assert.equal(verdictOf('if [[ $a > $b ]]; then echo hi; fi'), 'NO_MATCH');
+});
+
+test('single-bracket [ 1 > 2 ] is still a real redirect (control)', () => {
+  assert.equal(verdictOf('[ 1 > 2 ]'), 'DESTRUCTION');
+});
+
+// D1c - process substitution `>(...)`/`<(...)` is not a redirect to a file.
+// ships-if-missing: `tee >(wc -l)`, an ordinary process-substitution
+// pipeline, is blocked as if it truncated a file literally named `(wc`.
+test('>( process substitution is not a truncating redirect', () => {
+  assert.equal(verdictOf('tee >(wc -l)'), 'NO_MATCH');
+});
+
+test('<( process substitution is not an input-redirect target either', () => {
+  assert.equal(verdictOf('diff <(sort a) <(sort b)'), 'NO_MATCH');
+});

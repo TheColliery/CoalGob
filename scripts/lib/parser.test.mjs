@@ -1273,3 +1273,67 @@ test('> /dev/pts/N (a pseudo-terminal) is not a destruction', () => {
 test('> a genuinely different /dev path is still a destruction (control)', () => {
   assert.equal(verdictOf('echo hi > /dev/mydata'), 'DESTRUCTION');
 });
+
+// --- Group 42 (defence round 2, Group L) - unrouted-list gaps: direct
+// destroyers, not wrappers. Grows the OUT_OF_SCOPE named list only, never
+// the guarded DESTRUCTION_VERBS list - same precedent as shred/dd/erase ---
+
+// L1 - rd is cmd.exe's other spelling of rmdir and a PowerShell
+// Remove-Item alias.
+test('rd is OUT_OF_SCOPE, not NONE (cmd.exe/PowerShell alias for rmdir)', () => {
+  assert.equal(verdictOf('rd /s /q build'), 'OUT_OF_SCOPE');
+  assert.equal(kindOf('rd /s /q build'), 'unrouted');
+});
+
+test('RD is OUT_OF_SCOPE case-insensitively', () => {
+  assert.equal(verdictOf('RD /s /q build'), 'OUT_OF_SCOPE');
+});
+
+// L2 - cp from a null-sink source truncates its target.
+test('cp /dev/null <target> is OUT_OF_SCOPE (truncates the target)', () => {
+  assert.equal(verdictOf('cp /dev/null bigfile.log'), 'OUT_OF_SCOPE');
+  assert.equal(kindOf('cp /dev/null bigfile.log'), 'unrouted');
+});
+
+test('cp /dev/zero <target> is OUT_OF_SCOPE too (another null-sink source)', () => {
+  assert.equal(verdictOf('cp /dev/zero bigfile.log'), 'OUT_OF_SCOPE');
+});
+
+test('cp a b (an ordinary copy) is still NONE (control, copy stays out of scope)', () => {
+  assert.equal(verdictOf('cp a b'), 'NO_MATCH');
+});
+
+// L3 - tee truncates its target(s) on open unless appending.
+test('tee out.txt is OUT_OF_SCOPE (truncates on open)', () => {
+  assert.equal(verdictOf('tee out.txt'), 'OUT_OF_SCOPE');
+  assert.equal(kindOf('tee out.txt'), 'unrouted');
+});
+
+test('tee -a out.txt (append mode) is not flagged (provably safe, no truncation)', () => {
+  assert.equal(verdictOf('tee -a out.txt'), 'NO_MATCH');
+});
+
+test('bare tee (stdin to stdout, no file) is not flagged (control)', () => {
+  assert.equal(verdictOf('tee'), 'NO_MATCH');
+});
+
+// L4 - PowerShell Clear-Content / Set-Content -Value ''.
+test('Clear-Content is OUT_OF_SCOPE', () => {
+  assert.equal(verdictOf('Clear-Content x'), 'OUT_OF_SCOPE');
+  assert.equal(kindOf('Clear-Content x'), 'unrouted');
+});
+
+test("Set-Content -Value '' is OUT_OF_SCOPE (empties the target)", () => {
+  assert.equal(verdictOf("Set-Content -Value '' x"), 'OUT_OF_SCOPE');
+  assert.equal(kindOf("Set-Content -Value '' x"), 'unrouted');
+});
+
+test('Set-Content with a real value is not flagged (control)', () => {
+  assert.equal(verdictOf("Set-Content -Value 'hello' x"), 'NO_MATCH');
+});
+
+// L5 - node --eval is the same construct as node -e; only one was routed.
+test('node --eval is OUT_OF_SCOPE, matching node -e (declared edge consistency)', () => {
+  assert.equal(verdictOf('node --eval "1"'), 'OUT_OF_SCOPE');
+  assert.equal(kindOf('node --eval "1"'), 'declared');
+});

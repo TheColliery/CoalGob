@@ -182,11 +182,11 @@ function skipGitGlobalFlags(args) {
 
 const WRAPPER_SCRIPT_VERBS = new Set(['bash', 'sh', 'zsh', 'ksh', 'dash', 'source', '.']);
 const POSIX_INTERPRETER_VERBS = new Set(['node', 'python', 'python3', 'perl', 'ruby']);
-const POSIX_ONE_LINER_FLAGS = new Set(['-e', '-c']);
+const POSIX_ONE_LINER_FLAGS = new Set(['-e', '-c', '--eval']);
 const WINDOWS_ONE_LINER_VERBS = new Set(['pwsh', 'powershell']);
 const PKG_MANAGERS = new Set(['npm', 'yarn', 'pnpm', 'bun']);
 const GIT_DESTRUCTIVE_SUBCOMMANDS = new Set(['clean', 'rm', 'checkout', 'restore']);
-const NAMED_DESTROYER_VERBS = new Set(['shred', 'dd', 'eval', 'erase']);
+const NAMED_DESTROYER_VERBS = new Set(['shred', 'dd', 'eval', 'erase', 'rd']);
 const SCRIPT_EXTENSION = /\.(sh|ps1|py|pl|rb)$/i;
 
 const NULL_SINKS = new Set([
@@ -560,6 +560,14 @@ function analyzeDestructionVerb(verbLower, args) {
   return { verdict: 'DESTRUCTION', verb: verbLower, conditional: false };
 }
 
+// Set-Content always overwrites (never appends); an empty -Value is the
+// unambiguous "clear the file" shape - a real value is an ordinary write,
+// not in scope.
+function isSetContentClear(args) {
+  const idx = args.findIndex((w) => w.value.toLowerCase() === '-value');
+  return idx !== -1 && args[idx + 1]?.value === '';
+}
+
 // Every check that decides what a resolved verb word MEANS, extracted so
 // the same precise logic (git's own subcommand check included) applies
 // whether the verb was found as the walk's PRIMARY candidate or reached
@@ -591,6 +599,28 @@ function classifyVerb(verb, verbLower, args, heredoc, fdOutOfScope) {
 
   if (NAMED_DESTROYER_VERBS.has(verbLower)) {
     return { verdict: 'OUT_OF_SCOPE', reason: `${verbLower} is a direct destroyer this parser does not route`, kind: KIND_UNROUTED };
+  }
+  if (verbLower === 'cp' && isNonFileSink(args[0]?.value)) {
+    // Copying FROM a null-sink source truncates the target - an ordinary
+    // `cp a b` (copy is not in scope) is unaffected.
+    return { verdict: 'OUT_OF_SCOPE', reason: 'cp from a null-sink source truncates its target', kind: KIND_UNROUTED };
+  }
+  if (
+    verbLower === 'tee' && args.length > 0
+    && !args.some((w) => w.value === '-a' || w.value === '--append')
+    && !args.some((w) => w.value === '>' || w.value === '<')
+  ) {
+    // tee truncates every target on open unless appending - a bare `tee`
+    // (stdin to stdout, no file) and `tee -a` (append, no truncation) are
+    // both provably safe. The `>`/`<` exclusion is process substitution's
+    // own inert word tokens (D1) - `tee >(wc -l)` names no real file.
+    return { verdict: 'OUT_OF_SCOPE', reason: 'tee truncates its target(s) on open', kind: KIND_UNROUTED };
+  }
+  if (verbLower === 'clear-content' && args.length > 0) {
+    return { verdict: 'OUT_OF_SCOPE', reason: 'Clear-Content empties its target', kind: KIND_UNROUTED };
+  }
+  if (verbLower === 'set-content' && isSetContentClear(args)) {
+    return { verdict: 'OUT_OF_SCOPE', reason: "Set-Content -Value '' empties its target", kind: KIND_UNROUTED };
   }
   if (verbLower === 'make') {
     return { verdict: 'OUT_OF_SCOPE', reason: 'make target may run arbitrary destructive rules', kind: KIND_DECLARED };

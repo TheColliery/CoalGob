@@ -214,7 +214,13 @@ const POSIX_ONE_LINER_FLAGS = new Set(['-e', '-c', '--eval']);
 const WINDOWS_ONE_LINER_VERBS = new Set(['pwsh', 'powershell']);
 const PKG_MANAGERS = new Set(['npm', 'yarn', 'pnpm', 'bun']);
 const GIT_DESTRUCTIVE_SUBCOMMANDS = new Set(['clean', 'rm', 'checkout', 'restore']);
-const NAMED_DESTROYER_VERBS = new Set(['shred', 'dd', 'eval', 'erase', 'rd']);
+// `rd` removed (Set Z3, wave 8, defence round 9): CITED `rmdir /?`, RUN
+// live - RD and RMDIR print as ONE command with two names, so listing
+// `rd` here routed it AWAY from the same analyzer its own citation says
+// it shares. It now resolves through VERB_ALIASES to `rmdir` before this
+// set is ever consulted - the raw spelling `rd` can no longer reach this
+// check at all, so leaving it here would be dead, misleading data.
+const NAMED_DESTROYER_VERBS = new Set(['shred', 'dd', 'eval', 'erase']);
 // `.cmd`/`.bat` added (Set W5, defence round 7): batch SCRIPT FILES, not
 // binaries - previously stripped by EXECUTABLE_EXTENSION_RE above and so
 // classified as the coreutil they happened to be named after (`rm.cmd`
@@ -1368,14 +1374,18 @@ function classifyVerb(verb, verbLower, args, heredoc, fdOutOfScope, precededByPi
   return { verdict: 'NO_MATCH' };
 }
 
-// PowerShell verb aliases this room's guarded/named verbs already cover
-// under their canonical spelling. CITED SOURCE: `Get-Alias -Definition
-// <cmdlet>`, RUN live on this host (PowerShell 5.1.26100.8972) - not
-// recalled from memory. `sc` (Set-Content's own alias) is DELIBERATELY
-// excluded: it collides with sc.exe, the Windows Service Controller, an
-// unrelated and extremely common command - aliasing it would over-widen
-// this parser's own declared scope onto ordinary `sc query`/`sc start`.
-const POWERSHELL_VERB_ALIASES = {
+// Verb aliases this room's guarded/named verbs already cover under
+// their canonical spelling - drawn from TWO distinct alias mechanisms,
+// each cited at its OWN entry (never assumed uniform across the table -
+// the same one-source-generalized-past-its-own-citation mistake this
+// file's own DUAL_PLATFORM_CMD_EXE_VERBS comment exists to name):
+// PowerShell's `Get-Alias -Definition <cmdlet>` (ri/clc/mi/move) and
+// cmd.exe's own same-command synonyms (rd, Set Z3 below). `sc`
+// (Set-Content's PowerShell alias) is DELIBERATELY excluded: it
+// collides with sc.exe, the Windows Service Controller, an unrelated
+// and extremely common command - aliasing it would over-widen this
+// parser's own declared scope onto ordinary `sc query`/`sc start`.
+const VERB_ALIASES = {
   ri: 'remove-item',
   // Get-Alias -Definition Clear-Content -> clc, its only alias (Set W6,
   // defence round 7 - the audit's own T3 row: the alias MECHANISM below
@@ -1400,13 +1410,22 @@ const POWERSHELL_VERB_ALIASES = {
   // not re-opened here.
   mi: 'move-item',
   move: 'move-item',
+  // Set Z3 (wave 8, defence round 9). CITED SOURCE: `rmdir /?`, RUN live
+  // on this host - prints "RMDIR [/S] [/Q] [drive:]path" / "RD [/S]
+  // [/Q] ..." as ONE command with two names, not two commands - the
+  // same citation `DUAL_PLATFORM_CMD_EXE_VERBS` already rests on.
+  // Routed here (not left in NAMED_DESTROYER_VERBS) so `rd` reaches
+  // `rmdir`'s own full `analyzeDestructionVerb` precision - including
+  // its `/S`/`/Q` Windows-switch handling and dual-platform `--help`
+  // exemption - rather than a generic unrouted admission with no target.
+  rd: 'rmdir',
 };
 
 function verbAt(words, idx) {
   const raw = words[idx].value;
   const base = basenameOf(raw);
   const stripped = stripExeExtension(base).toLowerCase();
-  return { base, baseLower: POWERSHELL_VERB_ALIASES[stripped] || stripped };
+  return { base, baseLower: VERB_ALIASES[stripped] || stripped };
 }
 
 // Name-only check for a SECONDARY candidate (any candidate past the

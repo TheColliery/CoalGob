@@ -1491,15 +1491,18 @@ test('> a genuinely different /dev path is still a destruction (control)', () =>
 // destroyers, not wrappers. Grows the OUT_OF_SCOPE named list only, never
 // the guarded DESTRUCTION_VERBS list - same precedent as shred/dd/erase ---
 
-// L1 - rd is cmd.exe's other spelling of rmdir and a PowerShell
-// Remove-Item alias.
-test('rd is OUT_OF_SCOPE, not NONE (cmd.exe/PowerShell alias for rmdir)', () => {
-  assert.equal(verdictOf('rd /s /q build'), 'OUT_OF_SCOPE');
-  assert.equal(kindOf('rd /s /q build'), 'unrouted');
+// L1 - rd is cmd.exe's other spelling of rmdir - originally left
+// unrouted (OUT_OF_SCOPE, no target). SUPERSEDED by Set Z3 (wave 8,
+// defence round 9): CITED `rmdir /?`, RUN live, prints RD and RMDIR as
+// ONE command - `rd` now routes through `rmdir`'s own analyzer instead
+// of sitting unrouted with nothing for a remedy to name. See Group 88
+// for the dedicated test.
+test('rd routes through rmdir, not OUT_OF_SCOPE (control - Set Z3 superseded this)', () => {
+  assert.equal(verdictOf('rd /s /q build'), 'DESTRUCTION');
 });
 
-test('RD is OUT_OF_SCOPE case-insensitively', () => {
-  assert.equal(verdictOf('RD /s /q build'), 'OUT_OF_SCOPE');
+test('RD is DESTRUCTION case-insensitively (Set Z3)', () => {
+  assert.equal(verdictOf('RD /s /q build'), 'DESTRUCTION');
 });
 
 // L2 - cp from a null-sink source truncates its target.
@@ -3042,4 +3045,24 @@ test('move routes through Move-Item, not GNU mv (Set Z2)', () => {
   assert.equal(withForce.verdict, 'DESTRUCTION');
   assert.equal(withForce.findings[0].verb, 'move-item');
   assert.equal(withForce.findings[0].target, 'b');
+});
+
+// --- Group 88 (wave 8, Set Z3) - AXIS 1 (spelling, verb-alias level) +
+// SITE: `rmdir /?`, the CITED SOURCE `DUAL_PLATFORM_CMD_EXE_VERBS` was
+// itself built from, prints RMDIR and RD as ONE command with two names -
+// yet this parser routed them apart: `rmdir` reached full
+// `analyzeDestructionVerb` precision while `rd` sat in
+// NAMED_DESTROYER_VERBS, admitting only OUT_OF_SCOPE/unrouted with no
+// target at all. RULED (a): route `rd` through `rmdir`'s own analyzer -
+// leaving it unrouted means the remedy has nothing to name, which the
+// owner has ruled worse than none.
+// ships-if-missing: `rd /S /Q build` reports no at-risk path although
+// `rmdir /S /Q build`, the identical operation under its other name,
+// already does.
+test('rd routes through rmdir\'s own analyzer, same command two names (Set Z3)', () => {
+  const result = parseCommand('rd /S /Q build');
+  assert.equal(result.verdict, 'DESTRUCTION');
+  assert.equal(result.findings[0].verb, 'rmdir');
+  assert.equal(result.findings[0].target, 'build');
+  assert.deepEqual(result, parseCommand('rmdir /S /Q build'));
 });

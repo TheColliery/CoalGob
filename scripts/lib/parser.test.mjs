@@ -10,6 +10,119 @@ function kindOf(cmd) {
   return parseCommand(cmd).findings[0]?.kind;
 }
 
+// =============================================================================
+// THE AXIS LIST (defence round 7 derivation) - governs every "the whole ...
+// set resolves correctly" test in this file. An enumerating test states which
+// of these axes it covers; a set that closes without checking every axis a
+// construct actually has is exactly how S1-V4's own history kept re-finding
+// the "same defect, sibling spelling" shape. DERIVED, not assumed - the
+// original four (flag spelling/verb/value-form/platform, defence round 4)
+// plus wave 6's two (site/invocation-channel) collapse and expand under this
+// derivation to SEVEN: two of the "six known" merge into one dimension
+// (SPELLING, checked at two grammar levels), and two genuinely new axes
+// emerged this round (STRUCTURAL CONTEXT, OVERRIDE ORDER) that none of the
+// six named. A shorter list that is MORE GENERAL still beats a longer
+// remembered one - this is that attempt, not a bigger one for its own sake.
+//
+// 1. SPELLING (lexical alias) - the identical semantic unit (a verb, a flag,
+//    a redirect operator) has more than one exact string token that denotes
+//    it, at ANY of three grammar levels: verb-alias, flag-abbreviation/
+//    clustering/joined-form, operator-synonym. One dimension, checked at
+//    each level separately because each lives in its own code table.
+//    Source: PowerShell `Get-Alias -Definition <cmdlet>` - RAN (T3, T4).
+//    GNU getopt short/long/`=`-joined/clustered convention - READ (`--help`
+//    outputs: T2, S3, S4, U1, U2).
+//    Miss, twice: T3 closed `ri`, missed `clc` - found by V9 (Clear-Content's
+//    OWN alias), a different verb on the SAME table, one round later.
+//
+// 2. VALUE-FORM - a single flag/parameter's OWN VALUE is expressible in more
+//    than one syntactic shape while meaning the same thing: bare presence
+//    (=true), `:$true`/`:true`/`:1` / `:$false`/`:false`/`:0`, `--flag=val`,
+//    `--flag val`, a joined short form.
+//    Source: PowerShell parameter-binding syntax - RAN (T5, a live
+//    `[switch]`-bound throwaway function).
+//    Miss: T5 closed `-WhatIf`'s value-form; U5 found `-Force:$false` on
+//    Move-Item - byte-for-byte the same value-form defect, unenumerated
+//    for a SIBLING switch on a different verb (a SITE miss riding on top).
+//
+// 3. OVERRIDE ORDER - when a flag capable of conflicting with itself or a
+//    sibling flag appears MORE THAN ONCE (same spelling repeated, or two
+//    members of one override family), the LAST occurrence by argument order
+//    wins - never a fixed priority independent of position.
+//    Source: GNU getopt "last flag wins" convention - READ, cross-checked by
+//    RUNNING the actual repeated-flag shapes (`truncate -s +10 -s 0`,
+//    `mv -n -f`) against this room's own stated design intent.
+//    Miss: wave 3's C1/C2 (`mv -n -f` not overridden - S3 closed clustering
+//    but the FIRST pass had missed cross-spelling override entirely).
+//    NEW axis this round - not one of the "six known".
+//
+// 4. PLATFORM - the identical operation is expressed under a completely
+//    different switch-PREFIX CONVENTION depending on which program owns the
+//    verb (`/?` cmd.exe vs `--help` GNU) - AND a single verb NAME can belong
+//    to more than one platform's grammar at once (`rmdir` is both).
+//    Source: `del /?`, `rmdir /?`, `truncate --help` - ALL RAN live on this
+//    host.
+//    Miss: U2's own fix wrongly excluded rmdir's real GNU `--help` form -
+//    caught by rot-canary the SAME round it was introduced.
+//
+// 5. STRUCTURAL CONTEXT (recursive) - a token's ROLE, or whether a normally-
+//    mandatory separator is even required before it, is determined by the
+//    ENCLOSING CONSTRUCT or an adjacent MARKER - never by the token's own
+//    spelling. This subsumes three shapes found independently before they
+//    were recognized as one axis: (a) an operator character means something
+//    different inside `[[ ]]`/`(( ))` than at top level (`>`/`<`: round 5;
+//    `&&`/`||`: round 6 V3); (b) a reserved word is a keyword only when it is
+//    ITSELF in a legal, recursively-verified slot, not merely spelled right
+//    and unquoted (round 5's quoted-`[[` fix, round 6 V4's `do`-as-argument
+//    fix - the third instance of this exact shape); (c) a separator that is
+//    USUALLY mandatory before `then`/`do` becomes OPTIONAL when the clause
+//    it follows closes with `))`/`]]` instead of an ordinary word (`for ((
+//    ; ; )) do` with no `;`); (d) an end-of-options marker (`--`) flips
+//    every LATER token's role from flag-shaped to positional, regardless of
+//    that token's own spelling (U4's `lastMvOverride` gap).
+//    Source: POSIX Shell Command Language, reserved-word recognition
+//    (RECALLED, not fetched this round - the WEAKEST citation on this list,
+//    matching T1's own honesty precedent) + GNU getopt `--` end-of-options
+//    (RECALLED) + bash conditional/arithmetic grammar (RAN live, this round,
+//    specifically to answer this dispatch: `if (( 1 )) then` and
+//    `while (( )) do` both run with no semicolon; `while true do` and
+//    `(( 1 )) echo` are both syntax errors - confirming the free pass is
+//    keyed to the CLOSING TOKEN, not to the keyword or to `for` specially).
+//    NEW axis this round, formed by unifying four things once thought
+//    separate.
+//
+// 6. INVOCATION CHANNEL - a command's operand can reach it through more than
+//    one BINDING MECHANISM: a positional argument, a named flag, or a
+//    pipeline stage upstream of it. A check written as "does this segment
+//    have a positional operand" is blind to the other channels.
+//    Source: PowerShell's documented parameter-binding model ("Value from
+//    Pipeline") - RECALLED, not fetched this round.
+//    Miss: found by wave 6 (V9, `Get-ChildItem | Remove-Item -Force`), not
+//    yet fixed anywhere in this file - the room's own `!hasPositional`
+//    exemption (T2's own shape) never considered a segment reached via `|`.
+//
+// 7. SITE (implementation-level, NOT a grammar fact) - the SAME grammar fact
+//    (any of axes 1-6, already true and already coded somewhere) is
+//    re-implemented or re-checked at MORE THAN ONE place in this file, and a
+//    fix at one site does not reach the other. This is a property of OUR
+//    OWN CODE, not of bash/PowerShell/cmd.exe - its "citation" is therefore
+//    self-referential: grep the file for the existing correct
+//    implementation and confirm the broken site lacks the same call, never
+//    an external spec.
+//    Source: `verbAt`'s own `basenameOf`+`stripExeExtension` call - RAN
+//    (grepped this file, confirmed `resolveVerb`'s prefix comparison lacked
+//    the identical call before V2, and `analyzeMv`'s positional loop already
+//    honoured `--` while `lastMvOverride` did not, before U4).
+//    Miss, twice more: V2 (prefix word never normalized), U4/U7 (`--`
+//    honoured in one function, not its sibling in the same file).
+//
+// Not merged with the above despite superficial similarity: the ORIGINAL
+// four's "verb" and "flag spelling" collapse into axis 1's two levels; wave
+// 6's "site" and "invocation channel" are kept as axes 7 and 6 unchanged
+// (already precisely named, nothing to generalize). Net: two axes merged
+// into one, two new axes derived (3, 5) - SEVEN total, not six, not padded.
+// =============================================================================
+
 // --- Group 1: false positives (a quoted argument is not a command) ---
 // ships-if-missing: any destructive-looking substring anywhere in a command's
 // text blocks the command, even when it never runs as a command.
@@ -2016,6 +2129,49 @@ test('the whole isCommandPosition quoting/position set resolves correctly', () =
   ];
   for (const [cmd, expected] of cases) {
     assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});
+
+// --- Group 69 (defence round 7, Part 3) - parseCommand must return one
+// of the three verdicts for EVERY input, never throw. Walked every
+// built-in that can raise on bad input reachable from parseCommand
+// (path.normalize - the V1 site, already type-guarded; RegExp .test/
+// .exec - coerce via ToString, never throw on non-string; String
+// methods on a token .value - always a string, tokens are built from
+// slices of the input string itself; array indexing after a `.length`
+// or `!== -1` guard at every site). Fuzzed live (not just read) with
+// type-abuse, empty/whitespace/operator-only input, unterminated
+// quotes/heredocs/backslash, 1M-char tokens, lone UTF-16 surrogates,
+// 5000-deep nesting, and edge option shapes (bare `--`, `-t` with
+// nothing after it, a trailing colon with no value) - zero throws ---
+// ships-if-missing: any one of these inputs raises instead of
+// returning a verdict, and a PreToolUse hook built on this parser
+// crashes instead of blocking.
+test('parseCommand never throws - pathological and adversarial inputs', () => {
+  const cases = [
+    '', '   ', '\t\n', ';;;;;', '&&&&', '||||', '>>>>>', '<<<<<',
+    '((((((', '[[[[[[', ']]]]]]', '"', "'", '\\',
+    'a'.repeat(1_000_000),
+    '\uD800', '\uDC00', '𐀀rm',
+    '$', '$(', '$((', '<<EOF', '2>&', '>&',
+    null, undefined, 123, {}, [], true, Symbol('x'),
+    'cp --', 'mv --', 'mv -t', 'mv -t ',
+    'truncate -s', 'truncate --size', 'truncate --size=',
+    'Remove-Item -WhatIf:', 'Remove-Item -Path:',
+    '('.repeat(5000), '['.repeat(5000),
+    'echo >', 'echo <',
+    'a'.repeat(50) + '>' + 'b'.repeat(50000),
+    ' ', 'rm -rf',
+    '2>&' + '9'.repeat(5000),
+    'mv -- --', 'cp -t',
+  ];
+  for (const c of cases) {
+    let result;
+    assert.doesNotThrow(() => { result = parseCommand(c); }, String(c));
+    assert.ok(
+      result && ['DESTRUCTION', 'OUT_OF_SCOPE', 'NO_MATCH'].includes(result.verdict),
+      `${String(c)} -> ${JSON.stringify(result)}`,
+    );
   }
 });
 

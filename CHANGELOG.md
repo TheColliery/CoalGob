@@ -99,6 +99,14 @@ is the disambiguation. `b4f018b` = round 4's content (the give-up trigger's `/` 
 batch of fixes landing in one round is titled `(round N, part 2)`, or names what part 1 missed, so
 this cannot recur.
 
+**A claim in shipped text about what a guard covers is a defect of the same class as the guard being
+wrong itself (found and closed three times — `09d8a33`, `a6210a0`, `ad57e4c`):** `09d8a33` reconciled
+two commits sharing one byte-identical subject line. `a6210a0` closed a `-WhatIf` comment claiming
+`:$true`/`:$false` were both handled when only `:$true` was — the untested half silently permitted a
+real delete. `ad57e4c` closed a module-header sink list naming six entries after a prior round had
+added five more. Standing rule from here: a comment or header describing coverage is updated in the
+SAME commit that changes the coverage, never after.
+
 **Deliberately absent, each owed at a stated trigger:**
 
 - `hooks/`, `skills/`, `agents/`, `commands/`, interception code, `scripts/build-plugin.mjs`,

@@ -1364,3 +1364,55 @@ test('the whole -WhatIf switch-value set resolves correctly', () => {
     assert.equal(verdictOf(`Remove-Item ${flag} victim.txt`), expected, flag);
   }
 });
+
+// --- Group 44 (defence round 3, Set S2) - the WHOLE bash compound-command
+// keyword set that can occupy word 0: do/then/else/elif/! (already
+// implemented) plus if/while/until/case (the half that was missing).
+// Boundary, stated: `case` resolves to OUT_OF_SCOPE/unjudged, not
+// DESTRUCTION - the pattern label (`a)`) sits between the keyword and the
+// command, and this parser does not parse case-pattern grammar. That is a
+// declared limit, not a silent NO_MATCH ---
+// ships-if-missing: `if rm -f "$pid"; then ...` - an ordinary guard an
+// agent might type with no [[ ]] test at all - is invisible; word 0 is
+// classified as the verb `if`, which matches nothing, and because no
+// prefix was consumed not even the OUT_OF_SCOPE backstop fires.
+test('the whole shell-keyword-in-word-0 set resolves correctly', () => {
+  const cases = [
+    ['do rm x', 'DESTRUCTION'],
+    ['then rm x', 'DESTRUCTION'],
+    ['else rm x', 'DESTRUCTION'],
+    ['elif rm x', 'DESTRUCTION'],
+    ['! rm x', 'DESTRUCTION'],
+    ['if rm -rf build', 'DESTRUCTION'],
+    ['while rm -f lock', 'DESTRUCTION'],
+    ['until rm -f lock', 'DESTRUCTION'],
+  ];
+  for (const [segment, expected] of cases) {
+    assert.equal(verdictOf(segment), expected, segment);
+  }
+});
+
+test('if rm -rf build; then echo gone; fi (realistic multi-segment shape) is a destruction', () => {
+  assert.equal(verdictOf('if rm -rf build; then echo gone; fi'), 'DESTRUCTION');
+});
+
+test('while rm -f lock; do sleep 1; done is a destruction', () => {
+  assert.equal(verdictOf('while rm -f lock; do sleep 1; done'), 'DESTRUCTION');
+});
+
+test('until rm -f lock; do sleep 1; done is a destruction', () => {
+  assert.equal(verdictOf('until rm -f lock; do sleep 1; done'), 'DESTRUCTION');
+});
+
+test('if truncate -s 0 log; then :; fi is a destruction (not rm-specific)', () => {
+  assert.equal(verdictOf('if truncate -s 0 log; then :; fi'), 'DESTRUCTION');
+});
+
+test('while mv a b; do :; done is a conditional destruction', () => {
+  assert.equal(verdictOf('while mv a b; do :; done'), 'DESTRUCTION');
+});
+
+test('case declares its stated boundary: unjudged, never a silent NO_MATCH', () => {
+  assert.equal(verdictOf('case $x in a) rm y;; esac'), 'OUT_OF_SCOPE');
+  assert.equal(kindOf('case $x in a) rm y;; esac'), 'unjudged');
+});

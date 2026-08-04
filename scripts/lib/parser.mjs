@@ -85,11 +85,14 @@ const DESTRUCTION_VERBS = new Set([
 const PREFIX_VERBS = new Set([
   'sudo', 'env', 'nice', 'time', 'command', 'nohup', 'setsid', 'stdbuf', 'doas', 'ionice', 'exec',
 ]);
-// Shell grammar occupying word 0, not a wrapper - do/then/else/elif/! sit
-// in front of the real command exactly the way a prefix verb does, but
-// take no flags/arguments of their own (a single-token skip, unlike
-// PREFIX_VERBS which may consume a following duration/flag).
-const SHELL_KEYWORDS = new Set(['do', 'then', 'else', 'elif', '!']);
+// The set: every bash compound-command keyword that can occupy word 0 and
+// take no flags/arguments of its own before the real command (a single-
+// token skip, unlike PREFIX_VERBS which may consume a following duration/
+// flag). `case` is deliberately NOT here - its pattern label (`a)`) sits
+// between the keyword and the command, which this single-token skip
+// cannot resolve; it is handled at classifyVerb instead, where it
+// declares OUT_OF_SCOPE/unjudged rather than joining this set.
+const SHELL_KEYWORDS = new Set(['do', 'then', 'else', 'elif', '!', 'if', 'while', 'until']);
 const TIMEOUT_VERB = 'timeout';
 const ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const DURATION_RE = /^[\d.]+[smhd]?$/;
@@ -608,6 +611,16 @@ function classifyVerb(verb, verbLower, args, heredoc, fdOutOfScope) {
   const unjudged = unjudgedConstruct(heredoc, fdOutOfScope);
   if (unjudged) return unjudged;
 
+  if (verbLower === 'case') {
+    // A case-statement's pattern label (`a)`) sits between the keyword and
+    // the command that follows it - grammar this parser does not parse.
+    // Declared unjudged rather than left as a silent NO_MATCH. Boundary:
+    // this only recognizes the case-statement's OPENING (word 0 of a
+    // segment) - a later `;;`-separated clause's own command sits behind
+    // its own pattern label, itself unrecognized, and is invisible to
+    // this check the same way a subshell later in an argument is.
+    return { verdict: 'OUT_OF_SCOPE', reason: 'case pattern grammar not inspected', kind: KIND_UNJUDGED };
+  }
   if (NAMED_DESTROYER_VERBS.has(verbLower)) {
     return { verdict: 'OUT_OF_SCOPE', reason: `${verbLower} is a direct destroyer this parser does not route`, kind: KIND_UNROUTED };
   }

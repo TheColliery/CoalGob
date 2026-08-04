@@ -3124,3 +3124,35 @@ test('an unambiguous long-option PREFIX resolves the same as the exact spelling 
   // abbreviation is not "starts with any dash").
   assert.equal(verdictOf('mv --xyz a b'), 'DESTRUCTION');
 });
+
+// --- Group 91 (wave 8, Set Z7) - the bash tokenizer's OWN backslash-
+// escape rule (correct for real bash) was applied uniformly to cmd.exe
+// and PowerShell verb operands too - neither shell escapes with
+// backslash at all (cmd.exe has none; PowerShell's own escape character
+// is the backtick), so `del C:\temp\a.txt` reported target `C:tempa.txt`
+// - a right verdict computed from a path that does not exist, and the
+// remedy would name a file that was never there. CITED, well-established
+// Windows drive-letter path syntax (`<letter>:\...`), RUN via a FILE-
+// based probe this round, never a shell-quoted argument - this room's
+// own probe trap, already paid for twice: quoting `C:\temp\a.txt`
+// through a shell mangles the very backslashes under test before the
+// parser ever sees them, and this test file IS that safe form (a JS
+// string literal, read as a file by `node --test`, never shell-parsed).
+// Scoped to EXACTLY a `<letter>:\` opening - a bare relative backslash
+// path with no drive letter is not distinguishable from an ordinary (if
+// unusual) bash escape sequence and stays covered by bash's own rule
+// (control, below).
+test('a Windows drive-letter path is not mangled by bash backslash-escaping (Set Z7)', () => {
+  const del = parseCommand('del C:\\temp\\a.txt');
+  assert.equal(del.verdict, 'DESTRUCTION');
+  assert.equal(del.findings[0].target, 'C:\\temp\\a.txt');
+
+  const removeItem = parseCommand('Remove-Item C:\\build\\out.txt');
+  assert.equal(removeItem.verdict, 'DESTRUCTION');
+  assert.equal(removeItem.findings[0].target, 'C:\\build\\out.txt');
+
+  // A bare relative backslash path (no drive letter) is NOT this
+  // signature - bash's own escape rule still applies (control).
+  const relative = parseCommand('rm foo\\bar.txt');
+  assert.equal(relative.findings[0].target, 'foobar.txt');
+});

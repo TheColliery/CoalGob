@@ -539,6 +539,22 @@ function tokenize(input) {
     const startI = i;
     let brokeOnError = false;
     let sawQuote = false;
+    // Set Z7 (wave 8, defence round 9): a word starting `<letter>:\` is
+    // an unambiguous Windows drive-letter path - CITED, well-established
+    // Windows path syntax, RUN live (a file-based probe this round,
+    // never a shell-quoted argument - this room's own probe trap,
+    // already paid for twice: a shell-quoted `node -e` mangles the very
+    // backslashes under test before the parser ever sees them). Neither
+    // real consumer of this spelling escapes with backslash - cmd.exe
+    // has no backslash escape at all, and PowerShell's own escape
+    // character is the backtick - so bash's own backslash-escape rule
+    // below must not consume this word's path separators. `del
+    // C:\temp\a.txt` was reporting target `C:tempa.txt`: a right
+    // verdict computed from a path that does not exist. Scoped to
+    // EXACTLY this signature; a bare relative backslash path with no
+    // drive letter is not distinguishable from an ordinary (if unusual)
+    // bash escape sequence and is NOT covered.
+    const isWindowsDrivePath = /^[A-Za-z]:\\/.test(input.slice(i, i + 3));
     while (i < n) {
       const ch = input[i];
       if (ch === ' ' || ch === '\t' || ch === '\n' || ';|&><'.includes(ch)) break;
@@ -589,7 +605,7 @@ function tokenize(input) {
       // quote branch below takes over unchanged (its own escaping rules
       // already apply - this is NOT ANSI-C quoting).
       if (ch === '$' && input[i + 1] === '"') { i++; continue; }
-      if (ch === '\\') {
+      if (ch === '\\' && !isWindowsDrivePath) {
         if (input[i + 1] === '\n') { i += 2; continue; }
         if (i + 1 >= n) { errors.push('trailing backslash at end of command'); i = n; brokeOnError = true; break; }
         // Escaping a character is quoting it (POSIX shell grammar) - a

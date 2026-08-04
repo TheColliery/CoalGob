@@ -1644,3 +1644,31 @@ test('ri -WhatIf is still the dry-run switch through the alias (control - full r
 test('RI is case-insensitive, matching every other verb resolution in this parser', () => {
   assert.equal(verdictOf('RI foo.txt'), 'DESTRUCTION');
 });
+
+// --- Group 52 (defence round 4, Set T4) - Move-Item / move / mi. CITED
+// SOURCE: `Get-Alias -Definition Move-Item`, RUN live on this host
+// (PowerShell 5.1.26100.8972) this session -> mi, move, mv. `mv` is
+// already routed (POSIX mv, the same conditional semantics apply
+// identically to Move-Item); `mi` and `move` (also cmd.exe's own move
+// command, the same real operation under a third name) were not ---
+// ships-if-missing: `move a b` and `mi a b` - Move-Item's cmd.exe and
+// PowerShell-alias spellings - report NO_MATCH although they are the
+// exact operation `mv` is already guarded for.
+test('move (cmd.exe / PowerShell alias for Move-Item) carries mv-over-target semantics', () => {
+  const result = parseCommand('move a b');
+  assert.equal(result.verdict, 'DESTRUCTION');
+  assert.equal(result.findings[0].conditional, true);
+  assert.equal(result.findings[0].target, 'b');
+});
+
+test('mi (PowerShell alias for Move-Item) carries the same semantics', () => {
+  assert.equal(verdictOf('mi a b'), 'DESTRUCTION');
+});
+
+test('move -n (no-clobber) is exempt, same as mv -n (control - full mv precision carries over)', () => {
+  assert.equal(verdictOf('move -n a b'), 'NO_MATCH');
+});
+
+test('MOVE is case-insensitive', () => {
+  assert.equal(verdictOf('MOVE a b'), 'DESTRUCTION');
+});

@@ -830,6 +830,13 @@ function classifyVerb(verb, verbLower, args, heredoc, fdOutOfScope) {
 // this parser's own declared scope onto ordinary `sc query`/`sc start`.
 const POWERSHELL_VERB_ALIASES = {
   ri: 'remove-item',
+  // Get-Alias -Definition Move-Item -> mi, move, mv. mv (POSIX) is
+  // already the canonical spelling analyzeMv's conditional semantics are
+  // written against - mi/move (also cmd.exe's own move, the same real
+  // operation under a third name) resolve to it directly rather than a
+  // separate move-item spelling with its own duplicate logic.
+  mi: 'mv',
+  move: 'mv',
 };
 
 function verbAt(words, idx) {

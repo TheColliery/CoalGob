@@ -83,8 +83,13 @@ const DESTRUCTION_VERBS = new Set([
 ]);
 
 const PREFIX_VERBS = new Set([
-  'sudo', 'env', 'nice', 'time', 'command', 'nohup', 'setsid', 'stdbuf', 'doas', 'ionice',
+  'sudo', 'env', 'nice', 'time', 'command', 'nohup', 'setsid', 'stdbuf', 'doas', 'ionice', 'exec',
 ]);
+// Shell grammar occupying word 0, not a wrapper - do/then/else/elif/! sit
+// in front of the real command exactly the way a prefix verb does, but
+// take no flags/arguments of their own (a single-token skip, unlike
+// PREFIX_VERBS which may consume a following duration/flag).
+const SHELL_KEYWORDS = new Set(['do', 'then', 'else', 'elif', '!']);
 const TIMEOUT_VERB = 'timeout';
 const ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const DURATION_RE = /^[\d.]+[smhd]?$/;
@@ -415,6 +420,11 @@ function resolveVerb(words) {
     if (PREFIX_VERBS.has(wLower)) {
       idx++;
       lastPrefixVerb = wLower;
+      consumedPrefix = true;
+      continue;
+    }
+    if (SHELL_KEYWORDS.has(wLower)) {
+      idx++;
       consumedPrefix = true;
       continue;
     }

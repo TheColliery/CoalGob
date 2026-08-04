@@ -1129,3 +1129,45 @@ test('2> to a real file is still unjudged (control, M1 ruling unaffected)', () =
   assert.equal(verdictOf('cmd 2> important-file'), 'OUT_OF_SCOPE');
   assert.equal(kindOf('cmd 2> important-file'), 'unjudged');
 });
+
+// --- Group 39 (defence round 2, Group G) - shell grammar occupying word 0
+// is not a wrapper, it is bash SYNTAX - do/then/else/elif/! sit in front
+// of the real command the same way a prefix verb does. `exec` genuinely IS
+// a transparent prefix (it replaces the shell with the named command) and
+// belongs in PREFIX_VERBS exactly like nohup/setsid ---
+// ships-if-missing: `for f in *.log; do rm "$f"; done` - the single most
+// common bash loop shape - reports NO_MATCH because `do` occupies word 0
+// of its own segment and the listed verb `rm` is never classified. Same
+// class as `sudo rm` (the predecessor's own precedent): a token in word 0
+// that is not the command.
+test('do in word 0 (a for-loop body) does not hide the verb', () => {
+  assert.equal(verdictOf('for f in *.log; do rm "$f"; done'), 'DESTRUCTION');
+});
+
+test('then in word 0 (an if body) does not hide the verb', () => {
+  assert.equal(verdictOf('if [ -f a ]; then rm a; fi'), 'DESTRUCTION');
+});
+
+test('do in word 0 (a while-loop body) does not hide the verb', () => {
+  assert.equal(verdictOf('while read f; do rm $f; done'), 'DESTRUCTION');
+});
+
+test('else in word 0 does not hide the verb', () => {
+  assert.equal(verdictOf('if a; then b; else rm x; fi'), 'DESTRUCTION');
+});
+
+test('elif in word 0 does not hide the verb', () => {
+  assert.equal(verdictOf('if a; then b; elif rm x; fi'), 'DESTRUCTION');
+});
+
+test('! (pipeline negation) in word 0 does not hide the verb', () => {
+  assert.equal(verdictOf('! rm -rf build'), 'DESTRUCTION');
+});
+
+test('exec is a transparent prefix, same class as nohup/setsid', () => {
+  assert.equal(verdictOf('exec rm -rf build'), 'DESTRUCTION');
+});
+
+test('do as an ordinary argument (not word 0) is untouched (control)', () => {
+  assert.equal(verdictOf('echo do rm x'), 'NO_MATCH');
+});

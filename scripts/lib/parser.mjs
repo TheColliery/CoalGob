@@ -551,18 +551,23 @@ function isNoOpFlag(verbLower, value) {
   return false;
 }
 
-// GNU getopt semantics: when an option repeats, the LAST occurrence wins,
-// regardless of which spelling (-s, --size, --size=, or the joined short
-// form -s+10) each repetition used - so this walks args once in order and
-// keeps overwriting, rather than checking each spelling in priority order.
+// The set: truncate's -s/--size grammar. GNU getopt semantics - when the
+// option repeats, the LAST occurrence wins regardless of spelling (-s,
+// --size, --size=, the joined short form -s+10, or -s clustered with
+// other boolean short flags like -cs/-cs+10) - so this walks args once in
+// order and keeps overwriting, never checking one spelling in priority
+// order over another. Boundary, stated: only -s/--size's own value is
+// inspected; -c/-o/-r never affect grow-safety, clustered or not.
+const TRUNCATE_JOINED_S_RE = /^-[a-zA-Z]*s(.*)$/;
+
 function truncateGrowSize(args) {
   let size;
   for (let i = 0; i < args.length; i++) {
     const w = args[i].value;
-    if (w === '-s' || w === '--size') { size = args[i + 1]?.value; continue; }
+    if (w === '--size') { size = args[i + 1]?.value; continue; }
     if (w.startsWith('--size=')) { size = w.slice('--size='.length); continue; }
-    const joinedShort = /^-s(.+)$/.exec(w);
-    if (joinedShort) { size = joinedShort[1]; continue; }
+    const joinedShort = TRUNCATE_JOINED_S_RE.exec(w);
+    if (joinedShort) { size = joinedShort[1] || args[i + 1]?.value; continue; }
   }
   return size;
 }

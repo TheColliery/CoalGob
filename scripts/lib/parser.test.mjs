@@ -1443,3 +1443,31 @@ test('the whole mv override-flag set resolves correctly', () => {
     assert.equal(verdictOf(cmd), expected, cmd);
   }
 });
+
+// --- Group 46 (defence round 3, Set S4) - the WHOLE truncate -c/-o/-r/-s
+// option grammar: repeated/mixed-spelling -s resolves LAST-wins (already
+// true since Set I), and the value-taking -s is now visible inside a
+// short-option CLUSTER (-cs, -cs+10), the same clustering gap S3 just
+// closed for mv. Boundary, stated: only -s's own value decides grow-safety
+// - -c/-o/-r never affect it, clustered alongside -s or not ---
+// ships-if-missing: `truncate -cs +10 f` is a provable GROW (an explicit
+// +N size can never shrink the file) but is flagged as a destruction,
+// because the joined-short regex could not see the `s` sitting inside a
+// cluster with `-c`.
+test('the whole truncate -s option-grammar set resolves correctly', () => {
+  const cases = [
+    ['truncate -s +10 f', 'NO_MATCH'],
+    ['truncate -s 0 f', 'DESTRUCTION'],
+    ['truncate -s+10 f', 'NO_MATCH'],
+    ['truncate -cs +10 f', 'NO_MATCH'],
+    ['truncate -cs+10 f', 'NO_MATCH'],
+    ['truncate -c -s +10 f', 'NO_MATCH'],
+    ['truncate --size=+10 f', 'NO_MATCH'],
+    ['truncate --size +10 f', 'NO_MATCH'],
+    ['truncate -s +10 -s 0 f', 'DESTRUCTION'],
+    ['truncate -c f', 'DESTRUCTION'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});

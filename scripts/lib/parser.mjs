@@ -275,7 +275,16 @@ function tokenize(input) {
 
     if (c === ' ' || c === '\t') { i++; continue; }
     if (c === '\n') { pushSeparator('\n'); i++; continue; }
-    if (c === ';') { pushSeparator(';'); i++; continue; }
+    if (c === ';') {
+      // Inside an open arithmetic context, `;` is the C-style for-loop's
+      // own clause separator (`for (( expr1 ; expr2 ; expr3 ))`, bash's
+      // compound-command grammar) - not a command separator. Every other
+      // separator (&&, ||, |, &, \n) still force-closes parenDepth
+      // unconditionally, bounding an unbalanced `((` the same way.
+      if (parenDepth > 0) { i++; continue; }
+      pushSeparator(';');
+      i++; continue;
+    }
 
     // A backslash-newline line-continuation, occurring BETWEEN tokens (not
     // mid-word - that spelling is handled inside the word-scan loop below).

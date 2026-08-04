@@ -1549,3 +1549,29 @@ test('echo "2">victim.txt is DESTRUCTION with the correct target, not just any v
   assert.equal(result.verdict, 'DESTRUCTION');
   assert.equal(result.findings[0].target, 'victim.txt');
 });
+
+// --- Group 49 (defence round 4, Set T1) - the S6 completion: `for (( ; ;
+// ))`, bash's C-style for-loop header. CITED SOURCE: bash's own
+// compound-command grammar - `for (( expr1 ; expr2 ; expr3 )); do list;
+// done`, the ONLY paren form using `;` as an internal clause separator
+// rather than a command separator ---
+// ships-if-missing: the `;` characters inside the header are read as real
+// segment separators, which also force-resets parenDepth mid-header (the
+// same cross-segment-leak class S6 already fixed for `[[`), so the `>` in
+// `i>0` misparses as a live truncating redirect to a file literally named
+// `0`.
+test('for (( ; ; )) does not misparse its own clause separators as command separators', () => {
+  assert.equal(verdictOf('for ((i=10;i>0;i--)); do echo hi; done'), 'NO_MATCH');
+});
+
+test('for (( ; ; )) with spaces around each clause is unaffected', () => {
+  assert.equal(verdictOf('for (( i=10; i>0; i-- )); do echo hi; done'), 'NO_MATCH');
+});
+
+test('a genuine destructive verb inside the for-loop BODY is still caught (control)', () => {
+  assert.equal(verdictOf('for ((i=0;i<3;i++)); do rm -rf x; done'), 'DESTRUCTION');
+});
+
+test('a real ; still separates segments once the arithmetic header has genuinely closed (control)', () => {
+  assert.equal(verdictOf('echo hi; rm -rf x'), 'DESTRUCTION');
+});

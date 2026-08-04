@@ -1887,3 +1887,51 @@ test('the whole mv -- (end of options) set resolves correctly', () => {
     assert.equal(verdictOf(cmd), expected, cmd);
   }
 });
+
+// --- Group 59 (defence round 5, Set U5, part 1) - Move-Item's -Force
+// switch-value binding, byte-for-byte the -WhatIf:$false defect one
+// verb over. `-Force:$false` means the switch is OFF, so Move-Item
+// keeps its throw-on-existing-target behaviour and overwrites nothing -
+// analyzeMoveItem accepted any `-force:` prefix as force-on regardless
+// of the value ---
+// ships-if-missing: `Move-Item -Force:$false a b` reports DESTRUCTION
+// although the switch is explicitly off and nothing is overwritten.
+test('the whole Move-Item -Force switch-value set resolves correctly', () => {
+  const cases = [
+    ['Move-Item -Force a b', 'DESTRUCTION'],
+    ['Move-Item -Force:$true a b', 'DESTRUCTION'],
+    ['Move-Item -Force:true a b', 'DESTRUCTION'],
+    ['Move-Item -Force:1 a b', 'DESTRUCTION'],
+    ['Move-Item -Force:$false a b', 'NO_MATCH'],
+    ['Move-Item -Force:false a b', 'NO_MATCH'],
+    ['Move-Item -Force:0 a b', 'NO_MATCH'],
+    ['Move-Item a b', 'NO_MATCH'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});
+
+// --- Group 60 (defence round 5, Set U5, part 2) - Remove-Item's
+// -WhatIf prefix floor. CITED SOURCE: `(Get-Command Remove-Item).
+// Parameters.Keys`, RUN live on this host (PowerShell 5.1.26100.8972) -
+// only THREE parameters start with `W`: WarningAction, WarningVariable,
+// WhatIf. `-W` is ambiguous (matches three); `-Wh` is unique (the other
+// two continue `Wa`), so PowerShell's own shortest-unambiguous-prefix
+// rule sets the real floor at 3, not the 4 this room had hand-drawn
+// inside a set it otherwise ran correctly ---
+// ships-if-missing: `Remove-Item -wh f` is a genuine dry run (PowerShell
+// binds -wh to -WhatIf) but was reported DESTRUCTION because the floor
+// was one character too high.
+test('the whole Remove-Item -WhatIf prefix-floor set resolves correctly', () => {
+  const cases = [
+    ['Remove-Item -wh f', 'NO_MATCH'],
+    ['Remove-Item -what f', 'NO_MATCH'],
+    ['Remove-Item -whatif f', 'NO_MATCH'],
+    ['Remove-Item -w f', 'DESTRUCTION'],
+    ['Remove-Item f', 'DESTRUCTION'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});

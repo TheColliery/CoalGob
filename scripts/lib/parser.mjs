@@ -617,12 +617,11 @@ function analyzeMv(args) {
 // touching neither file - provably safe regardless of runtime state,
 // unlike mv's unconditional-by-default overwrite. `Move-Item -Force a b`
 // onto an existing b succeeds and overwrites it - conditional on b
-// existing at runtime, the same model mv already has.
+// existing at runtime, the same model mv already has. `-Force`'s own
+// switch-value form (`-Force:$false` turns it OFF) is resolved by
+// isSwitchOn below - the same binding rule -WhatIf already gets.
 function analyzeMoveItem(args) {
-  const hasForce = args.some((w) => {
-    const lower = w.value.toLowerCase();
-    return lower === '-force' || lower.startsWith('-force:');
-  });
+  const hasForce = args.some((w) => isSwitchOn(w.value, '-force'));
   if (!hasForce) {
     return { verdict: 'NO_MATCH' };
   }
@@ -641,18 +640,27 @@ function analyzeMoveItem(args) {
 // --- a listed destruction verb (rm/rmdir/unlink/truncate/del/Remove-Item) --
 
 // The set: PowerShell switch-parameter value syntax. Covered - bare
-// -WhatIf (presence alone means true), an unambiguous prefix abbreviation
-// (`-wha`/4 chars is the shortest this room has a named example for), and
-// an explicit-value form (`-WhatIf:$true`/`:true`/`:1` = dry run ON,
-// `:$false`/`:false`/`:0` = dry run OFF, NOT a no-op). Boundary, stated:
-// an explicit value outside this recognized set (a variable reference
-// like `-WhatIf:$SomeVar`) is NOT resolved - it defaults to NOT exempt,
-// the safe direction when this parser cannot tell which way the switch
-// actually resolves at runtime.
-const WHATIF_TRUE_VALUES = new Set(['$true', 'true', '1']);
+// presence (means true), an unambiguous prefix abbreviation (-WhatIf
+// only), and an explicit-value form (`:$true`/`:true`/`:1` = ON,
+// `:$false`/`:false`/`:0` = OFF, NOT a no-op). Boundary, stated: an
+// explicit value outside this recognized set (a variable reference like
+// `-WhatIf:$SomeVar`) is NOT resolved - it defaults to NOT exempt, the
+// safe direction when this parser cannot tell which way the switch
+// actually resolves at runtime. Shared across every switch this parser
+// binds (-WhatIf, -Force) - the value grammar is PowerShell's, not the
+// individual switch's.
+const SWITCH_TRUE_VALUES = new Set(['$true', 'true', '1']);
 
+// CITED SOURCE: `(Get-Command Remove-Item).Parameters.Keys`, RUN live on
+// this host (PowerShell 5.1.26100.8972) - only three parameters start
+// with `W`: WarningAction, WarningVariable, WhatIf. `-W` is ambiguous
+// (matches all three); `-Wh` is unique (the other two continue `Wa`), so
+// PowerShell's own shortest-unambiguous-prefix rule sets the floor at 3
+// (`-Wh`), not a hand-drawn 4 - axis: every parameter Remove-Item
+// actually exposes, not just the one abbreviation this room had a name
+// for.
 function isWhatIfName(base) {
-  return base.length >= 4 && base.startsWith('-') && '-whatif'.startsWith(base);
+  return base.length >= 3 && base.startsWith('-') && '-whatif'.startsWith(base);
 }
 
 function isRemoveItemWhatIf(value) {
@@ -661,7 +669,21 @@ function isRemoveItemWhatIf(value) {
   const base = colonIdx === -1 ? lower : lower.slice(0, colonIdx);
   if (!isWhatIfName(base)) return false;
   if (colonIdx === -1) return true;
-  return WHATIF_TRUE_VALUES.has(lower.slice(colonIdx + 1));
+  return SWITCH_TRUE_VALUES.has(lower.slice(colonIdx + 1));
+}
+
+// Generic PowerShell switch-value binding for a switch's OWN exact
+// spelling (no abbreviation - Move-Item's -Force has no reported
+// abbreviation defect, and adding one would be an unreported, hand-drawn
+// claim). Bare presence means true; an explicit `:value` resolves the
+// same SWITCH_TRUE_VALUES grammar -WhatIf's colon-form already uses.
+function isSwitchOn(value, switchNameLower) {
+  const lower = value.toLowerCase();
+  const colonIdx = lower.indexOf(':');
+  const base = colonIdx === -1 ? lower : lower.slice(0, colonIdx);
+  if (base !== switchNameLower) return false;
+  if (colonIdx === -1) return true;
+  return SWITCH_TRUE_VALUES.has(lower.slice(colonIdx + 1));
 }
 
 // The set: PowerShell's `-Name:Value` colon-binding syntax, CITED SOURCE

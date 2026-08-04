@@ -736,12 +736,14 @@ function isColonValueFlag(verbLower, value) {
 
 // A dry-run/help flag that means "destroys nothing", scoped to the one verb
 // each spelling actually belongs to - a Windows-only or PowerShell-only
-// switch has no meaning for the other listed verbs. `--help`/`--version`
-// are GNU getopt convention and do NOT extend to the CMD_EXE_VERBS family
-// (del/rmdir have no `--` switches at all, cited above at CMD_EXE_VERBS) -
-// for them, only their own `/?` is a no-op.
+// switch has no meaning for the other listed verbs. `/?` is a no-op for
+// every CMD_EXE_VERBS member; `--help`/`--version` (GNU getopt
+// convention) are a no-op for every verb EXCEPT a Windows-only one with
+// no GNU form at all (`del` - see DUAL_PLATFORM_CMD_EXE_VERBS) - additive
+// for a dual-platform verb like `rmdir`, never exclusive of its GNU form.
 function isNoOpFlag(verbLower, value) {
-  if (CMD_EXE_VERBS.has(verbLower)) return value === '/?';
+  if (CMD_EXE_VERBS.has(verbLower) && value === '/?') return true;
+  if (CMD_EXE_VERBS.has(verbLower) && !DUAL_PLATFORM_CMD_EXE_VERBS.has(verbLower)) return false;
   if (value === '--help' || value === '--version') return true;
   if (verbLower === 'remove-item' && isRemoveItemWhatIf(value)) return true;
   return false;
@@ -779,12 +781,23 @@ function truncateGrowSize(args) {
   return size;
 }
 
-// cmd.exe builtins sharing one grammar: `/`-prefixed switches, NO `--`
-// GNU-style switches at all. CITED SOURCE, both RUN live on this host:
-// `del /?` -> "DEL [/P] [/F] [/S] [/Q] [/A[[:]attributes]] names";
-// `rmdir /?` -> "RMDIR [/S] [/Q] [drive:]path" / "RD [/S] [/Q] ...".
-// Axes: both listed verbs sharing the family, not just the one queried.
+// cmd.exe builtins sharing one grammar: `/`-prefixed switches. CITED
+// SOURCE, both RUN live on this host: `del /?` -> "DEL [/P] [/F] [/S]
+// [/Q] [/A[[:]attributes]] names"; `rmdir /?` -> "RMDIR [/S] [/Q]
+// [drive:]path" / "RD [/S] [/Q] ...". Axes: both listed verbs sharing
+// the family, not just the one queried.
 const CMD_EXE_VERBS = new Set(['del', 'rmdir']);
+
+// The axis U2 (this same round) never checked: platform membership is
+// NOT uniform across CMD_EXE_VERBS. `del` has no POSIX/GNU equivalent
+// anywhere - Windows-only, `/`-switches ONLY. `rmdir` is ALSO a real
+// GNU coreutils tool - CITED SOURCE: `rmdir --help`, RUN live on this
+// host (GNU coreutils via MSYS2) - supports `--help`/`--version` like
+// any other GNU tool. So `/?` is ADDITIVE for rmdir, never exclusive of
+// its GNU form; enumerated explicitly here rather than assumed uniform
+// across the set above (the same one-fix-generalized-past-its-source
+// mistake this constant's own sibling correction exists to name).
+const DUAL_PLATFORM_CMD_EXE_VERBS = new Set(['rmdir']);
 
 function isWindowsSwitch(verbLower, value) {
   return CMD_EXE_VERBS.has(verbLower) && /^\/[A-Za-z]/.test(value);

@@ -1854,6 +1854,38 @@ test('the whole cmd.exe no-op-flag set resolves correctly', () => {
   }
 });
 
+// --- Group 56 correction (rot-canary, same round) - U2's own fix
+// generalized `del`'s "no `--` switches" fact across the whole
+// CMD_EXE_VERBS family without checking whether each member is
+// DUAL-PLATFORM. `rmdir` is not Windows-only the way `del` is - it is
+// also a real GNU coreutils tool. CITED SOURCE: `rmdir --help`, RUN
+// live on this host (GNU coreutils, MSYS2 rmdir) - supports
+// `--help`/`--version`/`--ignore-fail-on-non-empty`/`-p, --parents`
+// like any other GNU tool. Axis U2 never checked: platform membership
+// is not uniform across CMD_EXE_VERBS - `/?` is additive for rmdir,
+// never exclusive of its GNU form ---
+// ships-if-missing: `rmdir --help somedir` / `rmdir --version somedir`
+// misclassify as DESTRUCTION although a real GNU rmdir just prints
+// help/version and touches nothing - a live regression introduced by
+// U2 in this same round, caught by rot-canary before it shipped.
+test('rmdir is dual-platform: its GNU --help/--version survive alongside cmd.exe /? (correction)', () => {
+  const cases = [
+    ['rmdir --help somedir', 'NO_MATCH'],
+    ['rmdir --version somedir', 'NO_MATCH'],
+    ['rmdir --help', 'NO_MATCH'],
+    ['rmdir /? somedir', 'NO_MATCH'],
+    ['rmdir /s /q build', 'DESTRUCTION'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});
+
+test('del stays Windows-only: --help/--version are NOT a no-op for it (control, unaffected by the correction)', () => {
+  assert.equal(verdictOf('del --help important.txt'), 'DESTRUCTION');
+  assert.equal(verdictOf('del --version important.txt'), 'DESTRUCTION');
+});
+
 // --- Group 57 (defence round 5, Set U3) - a `[[` only opens a bracket
 // test when it is a BARE, unquoted, unescaped keyword. `opensTest`
 // gated on command position but never on `quoted` - a quoted or

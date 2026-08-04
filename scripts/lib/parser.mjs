@@ -1,3 +1,10 @@
+// ponytail: 911 lines at declaration (defence round 3, Set S6) - over the
+// 800-line file-length signal. Splitting today is deferred to a unit of
+// its own: this round measured 65% of wave 3's findings as INTRODUCED by
+// our own prior fixes, and a structural split immediately before wave 4
+// would add surface we cannot yet attribute to either the split or a new
+// destroyer. Split after the dry-round count is measured, not before.
+//
 // Pure Bash-command classifier. No filesystem access (ruling 3): a caller
 // that needs a runtime fact (does mv's target exist?) gets a `conditional`
 // flag and does its own stat. In scope: rm, rmdir, unlink, truncate,
@@ -47,11 +54,13 @@
 //     never itself treated as destructive - an input redirect only reads.
 //   - fd-duplication/close (`>&N`, `>&-`) is recognized only in the `>&`
 //     spelling, not `<&`.
-//   - A non-file sink is verified by name against a fixed list
-//     (/dev/null, /dev/zero, /dev/full, /dev/tty, /dev/stdout, /dev/stderr,
-//     /dev/fd/N, /proc/self/fd/N, Windows NUL) - a symlink or bind-mount
-//     that resolves to one of these under a different name is not caught,
-//     because this parser never touches the filesystem (ruling 3).
+//   - A non-file sink is verified by name against a fixed list (/dev/null,
+//     /dev/zero, /dev/full, /dev/tty, /dev/stdout, /dev/stderr, /dev/random,
+//     /dev/urandom, /dev/console, /dev/fd/N, /proc/self/fd/N, a numbered
+//     tty (/dev/ttyN) or pseudo-terminal (/dev/pts/N), Windows NUL) - a
+//     symlink or bind-mount that resolves to one of these under a
+//     different name is not caught, because this parser never touches the
+//     filesystem (ruling 3).
 
 import { posix } from 'node:path';
 
@@ -104,10 +113,6 @@ function stripExeExtension(value) {
 
 function basenameOf(value) {
   return /[\\/]/.test(value) ? value.split(/[\\/]/).pop() : value;
-}
-
-function normalizedVerbOf(value) {
-  return stripExeExtension(basenameOf(value)).toLowerCase();
 }
 
 function isFlagShaped(w) {
@@ -172,6 +177,10 @@ const GIT_GLOBAL_VALUE_FLAGS = new Set(['-C', '-c']);
 // OPTIMIZATION mirroring skipSudoFlags: sharpens which token is the git
 // SUBCOMMAND when a global flag precedes it. An unrecognized flag still
 // defaults to boolean-skip-alone (the same safe default sudo's table uses).
+// DECLINED to merge with skipSudoFlags (rot-canary finding #7, defence
+// round 3): two flag vocabularies that happen to share a walk shape;
+// merging couples two grammars that will diverge. Left as two functions
+// on purpose - do not re-raise.
 function skipGitGlobalFlags(args) {
   let i = 0;
   while (i < args.length) {
@@ -226,6 +235,10 @@ function isCommandPosition(tokens) {
   return prev.type === 'word' && BRACKET_TEST_PRECEDERS.has(prev.value);
 }
 
+// ponytail: 206 lines at declaration (defence round 3) - over the 50-line
+// function-length signal. The bracket/paren/redirect branches could split
+// into helpers, but see the file-header declaration: extraction is
+// deferred to the same future unit, not done piecemeal mid-round.
 function tokenize(input) {
   const tokens = [];
   const errors = [];
@@ -664,6 +677,10 @@ function unjudgedConstruct(heredoc, fdOutOfScope) {
   return null;
 }
 
+// ponytail: 109 lines at declaration (defence round 3) - over the 50-line
+// function-length signal, grown by F/L/S2's OUT_OF_SCOPE-admission
+// additions. Same deferral as the file-header declaration - a lookup-
+// table extraction is future work, not this round's.
 function classifyVerb(verb, verbLower, args, heredoc, fdOutOfScope) {
   if (DESTRUCTION_VERBS.has(verbLower)) {
     const result = analyzeDestructionVerb(verbLower, args);
@@ -793,6 +810,8 @@ function isSecondaryCandidateNamedVerb(words, idx) {
 
 // --- one segment -------------------------------------------------------
 
+// ponytail: 92 lines at declaration (defence round 3) - over the 50-line
+// function-length signal. Same deferral as the file-header declaration.
 function analyzeSegment(tokens) {
   let heredoc = false;
   const words = [];

@@ -841,3 +841,29 @@ test('a tokenizer error (unterminated quote) is unjudged', () => {
 test('non-string input carries no kind at all - it is a caller contract violation, never a command-construct judgment', () => {
   assert.equal(parseCommand(123).findings[0].kind, undefined);
 });
+
+// --- Group 31 (work unit, Group C) - the missing transparent prefixes:
+// nohup/setsid/stdbuf/doas/ionice are the same class of wrapper this parser
+// already handles (sudo/env/nice/time/command), just absent from the list ---
+// ships-if-missing: `nohup rm -rf build` (and its siblings) resolve the
+// verb to the PREFIX itself and never look past it, reporting NO_MATCH on
+// an ordinary destructive command line.
+test('nohup rm is a destruction', () => {
+  assert.equal(verdictOf('nohup rm -rf build'), 'DESTRUCTION');
+});
+
+test('setsid rm is a destruction', () => {
+  assert.equal(verdictOf('setsid rm -rf build'), 'DESTRUCTION');
+});
+
+test('stdbuf -o0 rm is a destruction', () => {
+  assert.equal(verdictOf('stdbuf -o0 rm -rf build'), 'DESTRUCTION');
+});
+
+test('doas rm is a destruction', () => {
+  assert.equal(verdictOf('doas rm -rf build'), 'DESTRUCTION');
+});
+
+test('ionice -c3 rm is a destruction', () => {
+  assert.equal(verdictOf('ionice -c3 rm -rf build'), 'DESTRUCTION');
+});

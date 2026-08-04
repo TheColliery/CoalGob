@@ -74,7 +74,9 @@ const DESTRUCTION_VERBS = new Set([
   'rm', 'rmdir', 'unlink', 'truncate', 'del', 'remove-item',
 ]);
 
-const PREFIX_VERBS = new Set(['sudo', 'env', 'nice', 'time', 'command']);
+const PREFIX_VERBS = new Set([
+  'sudo', 'env', 'nice', 'time', 'command', 'nohup', 'setsid', 'stdbuf', 'doas', 'ionice',
+]);
 const TIMEOUT_VERB = 'timeout';
 const ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const DURATION_RE = /^[\d.]+[smhd]?$/;

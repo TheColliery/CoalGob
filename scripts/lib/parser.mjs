@@ -761,7 +761,48 @@ function resolveVerb(words) {
   return { index: idx, consumedPrefix, lastPrefixVerb };
 }
 
+// GNU getopt_long resolves any UNAMBIGUOUS PREFIX of a long option as
+// that option (Set Z5, wave 8, defence round 9 - CITED, RUN live this
+// round: `ls --hel` printed ls's full --help text). Every long-option
+// check in this file, until now, required an EXACT spelling. Ambiguity
+// is judged against the TOOL's own full long-option list (`allLongOptions`,
+// each cited at its own declaration below), never just the subset this
+// parser happens to model - the same "a fact must be checked against
+// the tool's real grammar, not the piece we already know" axiom
+// DUAL_PLATFORM_CMD_EXE_VERBS already established. `name` is the bare
+// `--word` form with any `=value` already split off by the caller
+// (splitLongOption below) - this function never sees the value half.
+function isLongOptionMatch(name, canonical, allLongOptions) {
+  if (!name.startsWith('--') || name.length <= 2) return false;
+  const body = name.slice(2);
+  const canonicalBody = canonical.slice(2);
+  if (body === canonicalBody) return true;
+  if (body.length === 0 || !canonicalBody.startsWith(body)) return false;
+  return !allLongOptions.some((opt) => opt !== canonical && opt.slice(2).startsWith(body));
+}
+
+// Splits a `--name` or `--name=value` token into its bare NAME (fed to
+// isLongOptionMatch) and its VALUE (`undefined` when there was no `=` -
+// a caller needing a space-separated form's value looks at the NEXT
+// token instead, same as every exact-match version of this check
+// already did).
+function splitLongOption(value) {
+  const eq = value.indexOf('=');
+  return eq === -1 ? { name: value, flagValue: undefined } : { name: value.slice(0, eq), flagValue: value.slice(eq + 1) };
+}
+
 // --- mv (ruling 3: conditional on the runtime existence of its target) -----
+
+// mv's FULL long-option list, CITED SOURCE `mv --help` RUN live this
+// round - the set `isLongOptionMatch` judges every mv abbreviation's
+// ambiguity against, not just the subset (backup/force/interactive/
+// no-clobber/target-directory) this parser happens to act on.
+const MV_LONG_OPTIONS = [
+  '--backup', '--force', '--interactive', '--no-clobber',
+  '--strip-trailing-slashes', '--suffix', '--target-directory',
+  '--no-target-directory', '--update', '--verbose', '--context',
+  '--help', '--version',
+];
 
 // The set: GNU mv's -f/-i/-n override grammar. -f/--force, -i/--interactive
 // and -n/--no-clobber override EACH OTHER - the LAST one, by argument
@@ -782,6 +823,14 @@ function lastMvOverride(args) {
     // never an override.
     if (v === '--') break;
     if (v in MV_OVERRIDE_LONG) { last = MV_OVERRIDE_LONG[v]; continue; }
+    if (v.startsWith('--')) {
+      // Set Z5: an unambiguous PREFIX of --force/--interactive/
+      // --no-clobber (e.g. `--no-clob`) is the SAME flag, not a
+      // different one - boolean overrides, so `=value` is never
+      // expected; a spurious `--forc=x` simply fails to match.
+      const canonical = Object.keys(MV_OVERRIDE_LONG).find((c) => isLongOptionMatch(v, c, MV_LONG_OPTIONS));
+      if (canonical) { last = MV_OVERRIDE_LONG[canonical]; continue; }
+    }
     if (v.length > 1 && v[0] === '-' && v[1] !== '-') {
       for (const ch of v.slice(1)) {
         if (MV_OVERRIDE_SHORT.has(ch)) last = ch;
@@ -798,9 +847,13 @@ function lastMvOverride(args) {
 // ruling (recoverability is per-OPERATION), the one mv spelling that is
 // PROVABLY recoverable must not be flagged - the exact inversion of the
 // design otherwise. Scoped to the exact spellings cited: a clustered `-b`
-// (e.g. `-vb`) is a named, uncited boundary, not attempted here.
+// (e.g. `-vb`) is a named, uncited boundary, not attempted here. An
+// unambiguous PREFIX of --backup (e.g. `--backu`) is the same flag
+// (Set Z5, wave 8) - `isLongOptionMatch` covers the exact spelling too.
 function isMvBackupFlag(v) {
-  return v === '-b' || v === '--backup' || v.startsWith('--backup=');
+  if (v === '-b') return true;
+  if (!v.startsWith('--')) return false;
+  return isLongOptionMatch(splitLongOption(v).name, '--backup', MV_LONG_OPTIONS);
 }
 
 // mv's DESTINATION-selection option, CITED SOURCE `mv --help` RUN live:
@@ -810,7 +863,8 @@ function isMvBackupFlag(v) {
 // long form was entirely unrecognized before this fix, so its own value
 // word was miscounted as a SOURCE. Returns the directory value and,
 // for the space-separated forms, the array index of that value word so
-// the caller can exclude it from the source list.
+// the caller can exclude it from the source list. An unambiguous PREFIX
+// of --target-directory (e.g. `--targ`) is the same flag (Set Z5, wave 8).
 function mvTargetDirectory(args) {
   for (let i = 0; i < args.length; i++) {
     const v = args[i].value;
@@ -819,8 +873,13 @@ function mvTargetDirectory(args) {
     // own SITE fix) - a `--target-directory`-shaped word after it is a
     // FILENAME, never the flag (Set X2, defence round 8).
     if (v === '--') break;
-    if (v === '-t' || v === '--target-directory') return { dir: args[i + 1]?.value, skipIdx: i + 1 };
-    if (v.startsWith('--target-directory=')) return { dir: v.slice('--target-directory='.length), skipIdx: -1 };
+    if (v === '-t') return { dir: args[i + 1]?.value, skipIdx: i + 1 };
+    if (v.startsWith('--')) {
+      const { name, flagValue } = splitLongOption(v);
+      if (isLongOptionMatch(name, '--target-directory', MV_LONG_OPTIONS)) {
+        return flagValue !== undefined ? { dir: flagValue, skipIdx: -1 } : { dir: args[i + 1]?.value, skipIdx: i + 1 };
+      }
+    }
   }
   return null;
 }
@@ -1065,6 +1124,11 @@ function isNoOpFlag(verbLower, value) {
   return false;
 }
 
+// truncate's FULL long-option list, CITED SOURCE `truncate --help` RUN
+// live this round - the set `isLongOptionMatch` (Set Z5, wave 8) judges
+// every truncate abbreviation's ambiguity against.
+const TRUNCATE_LONG_OPTIONS = ['--no-create', '--io-blocks', '--reference', '--size', '--help', '--version'];
+
 // The set: truncate's -s/--size grammar. GNU getopt semantics - when the
 // option repeats, the LAST occurrence wins regardless of spelling (-s,
 // --size, --size=, the joined short form -s+10, or -s clustered with
@@ -1099,8 +1163,20 @@ function truncateGrowSize(args) {
     const w = args[i].value;
     if (!endOptions && w === '--') { endOptions = true; continue; }
     if (endOptions) continue;
-    if (w === '--size') { size = args[i + 1]?.value; continue; }
-    if (w.startsWith('--size=')) { size = w.slice('--size='.length); continue; }
+    if (w.startsWith('--')) {
+      // Set Z5 (wave 8): an unambiguous PREFIX of --size (e.g. `--siz`,
+      // joined or space-separated) is the SAME flag - `isLongOptionMatch`
+      // covers the exact spelling too, replacing the two literal checks
+      // this used to need. `--reference`'s own value is DELIBERATELY not
+      // recognized here - it is a different flag serving a different
+      // purpose (Set Z1+Z6: skip its value so it is never miscounted as
+      // a target) and never feeds the grow-only SAFETY check.
+      const { name, flagValue } = splitLongOption(w);
+      if (isLongOptionMatch(name, '--size', TRUNCATE_LONG_OPTIONS)) {
+        size = flagValue !== undefined ? flagValue : args[i + 1]?.value;
+        continue;
+      }
+    }
     const joinedShort = TRUNCATE_JOINED_S_RE.exec(w);
     if (joinedShort) { size = joinedShort[1] || args[i + 1]?.value; continue; }
   }
@@ -1165,8 +1241,21 @@ const REMOVE_ITEM_VALUE_FLAGS = new Set([
 
 function isValueTakingFlag(verbLower, value) {
   if (verbLower === 'truncate') {
-    return value === '--size' || TRUNCATE_BARE_S_CLUSTER_RE.test(value)
-      || value === '--reference' || TRUNCATE_BARE_R_CLUSTER_RE.test(value);
+    if (value === '--size' || TRUNCATE_BARE_S_CLUSTER_RE.test(value)) return true;
+    if (value === '--reference' || TRUNCATE_BARE_R_CLUSTER_RE.test(value)) return true;
+    // Set Z5 (wave 8): an unambiguous PREFIX of --size/--reference in
+    // the SPACE-SEPARATED bare-flag form (e.g. `--siz VALUE`) needs the
+    // same "skip the flag AND its value token" treatment the exact
+    // spelling already gets. A `=`-joined abbreviation (`--siz=+10`) is
+    // NOT this shape - it is already self-contained (no separate value
+    // token to skip) and reaches the generic dash-prefix skip on its
+    // own; matching it here too would wrongly consume the NEXT token
+    // as well.
+    if (value.startsWith('--') && !value.includes('=')) {
+      return isLongOptionMatch(value, '--size', TRUNCATE_LONG_OPTIONS)
+        || isLongOptionMatch(value, '--reference', TRUNCATE_LONG_OPTIONS);
+    }
+    return false;
   }
   if (verbLower === 'remove-item') {
     return REMOVE_ITEM_VALUE_FLAGS.has(value.toLowerCase());

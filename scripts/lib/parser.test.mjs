@@ -3087,3 +3087,40 @@ test('an empty string is inert for a redirect target, but NOT a device sink for 
   // A REAL device sink as cp's source is unaffected (control).
   assert.equal(kindOf('cp /dev/null dest.txt'), 'unrouted');
 });
+
+// --- Group 90 (wave 8, Set Z5) - GNU getopt_long resolves any
+// UNAMBIGUOUS PREFIX of a long option as that option. CITED, RUN live
+// this round: `ls --hel` printed ls's full --help text. Every long-
+// option check in this file so far required an EXACT spelling.
+// Enumerated against the FULL long-option list each tool actually
+// exposes (CITED `mv --help`/`truncate --help`, both RUN live this
+// round), not just the subset this parser happens to model - the same
+// "judge ambiguity against the tool's real grammar" axiom
+// DUAL_PLATFORM_CMD_EXE_VERBS already established.
+// ships-if-missing: `mv --no-clob a b` (unambiguous for --no-clobber -
+// no other mv long option starts with "no-clob") is NOT exempted, so a
+// provably-safe invocation reports DESTRUCTION; `mv --targ dir a`
+// reports the wrong file (the DIRECTORY itself, not a joined path)
+// because --target-directory was never recognized at all; `truncate
+// --siz=+10 f` (unambiguous for --size) is DESTRUCTION instead of the
+// provably-safe grow-only NO_MATCH the exact spelling already gets.
+test('an unambiguous long-option PREFIX resolves the same as the exact spelling (Set Z5)', () => {
+  assert.equal(verdictOf('mv --no-clob a b'), 'NO_MATCH');
+  assert.equal(verdictOf('mv --backu a b'), 'NO_MATCH');
+  assert.equal(verdictOf('truncate --siz=+10 f'), 'NO_MATCH');
+  // --reference's abbreviation is a DIFFERENT claim (Set Z1+Z6): it
+  // only means RFILE's own value must not be miscounted as a second
+  // target - truncate --reference=RFILE FILE is still genuinely
+  // destructive (FILE's size becomes RFILE's, which may shrink it; no
+  // filesystem access means this parser cannot know RFILE's real size -
+  // ruling 3). Verdict stays DESTRUCTION; only the target LIST narrows.
+  const withReference = parseCommand('truncate --ref=r.txt f');
+  assert.equal(withReference.verdict, 'DESTRUCTION');
+  assert.deepEqual(withReference.findings.map((f) => f.target), ['f']);
+  const targetDir = parseCommand('mv --targ dir a');
+  assert.equal(targetDir.verdict, 'DESTRUCTION');
+  assert.equal(targetDir.findings[0].target, 'dir/a');
+  // A genuinely AMBIGUOUS or unrelated prefix must NOT match (control -
+  // abbreviation is not "starts with any dash").
+  assert.equal(verdictOf('mv --xyz a b'), 'DESTRUCTION');
+});

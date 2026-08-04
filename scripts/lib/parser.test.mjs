@@ -1337,3 +1337,30 @@ test('node --eval is OUT_OF_SCOPE, matching node -e (declared edge consistency)'
   assert.equal(verdictOf('node --eval "1"'), 'OUT_OF_SCOPE');
   assert.equal(kindOf('node --eval "1"'), 'declared');
 });
+
+// --- Group 43 (defence round 3, Set S1) - the WHOLE PowerShell -WhatIf
+// switch-value set, enumerated in one test: bare, explicit :$true/:$false,
+// :1/:0, and the legal abbreviations. Boundary: an explicit value NOT in
+// this recognized set (a variable reference, e.g. -WhatIf:$SomeVar)
+// defaults to NOT exempt - the safe direction when uncertain ---
+// ships-if-missing: -WhatIf:$false explicitly turns the dry run OFF and
+// the delete really happens; treating it as a no-op is not a missed edge,
+// it is telling the caller a real destruction is safe.
+test('the whole -WhatIf switch-value set resolves correctly', () => {
+  const cases = [
+    ['-WhatIf', 'NO_MATCH'],
+    ['-WhatIf:$true', 'NO_MATCH'],
+    ['-WhatIf:$false', 'DESTRUCTION'],
+    ['-WhatIf:1', 'NO_MATCH'],
+    ['-WhatIf:0', 'DESTRUCTION'],
+    ['-WhatIf:true', 'NO_MATCH'],
+    ['-WhatIf:false', 'DESTRUCTION'],
+    ['-Wha', 'NO_MATCH'],
+    ['-Whati', 'NO_MATCH'],
+    ['-Wha:$false', 'DESTRUCTION'],
+    ['-WhatIf:$SomeVar', 'DESTRUCTION'],
+  ];
+  for (const [flag, expected] of cases) {
+    assert.equal(verdictOf(`Remove-Item ${flag} victim.txt`), expected, flag);
+  }
+});

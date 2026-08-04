@@ -493,13 +493,24 @@ function analyzeMv(args) {
 
 // --- a listed destruction verb (rm/rmdir/unlink/truncate/del/Remove-Item) --
 
-// PowerShell allows an unambiguous prefix abbreviation of a parameter name,
-// and an explicit-value form (`-WhatIf:$true`/`:$false`). `-wha`/4 chars is
-// the shortest abbreviation this room has a named example for; anything
-// shorter is too ambiguous to resolve as this one switch.
+// The set: PowerShell switch-parameter value syntax. Covered - bare
+// -WhatIf (presence alone means true), an unambiguous prefix abbreviation
+// (`-wha`/4 chars is the shortest this room has a named example for), and
+// an explicit-value form (`-WhatIf:$true`/`:true`/`:1` = dry run ON,
+// `:$false`/`:false`/`:0` = dry run OFF, NOT a no-op). Boundary, stated:
+// an explicit value outside this recognized set (a variable reference
+// like `-WhatIf:$SomeVar`) is NOT resolved - it defaults to NOT exempt,
+// the safe direction when this parser cannot tell which way the switch
+// actually resolves at runtime.
+const WHATIF_TRUE_VALUES = new Set(['$true', 'true', '1']);
+
 function isRemoveItemWhatIf(value) {
-  const base = value.toLowerCase().split(':')[0];
-  return base.length >= 4 && base.startsWith('-') && '-whatif'.startsWith(base);
+  const lower = value.toLowerCase();
+  const colonIdx = lower.indexOf(':');
+  const base = colonIdx === -1 ? lower : lower.slice(0, colonIdx);
+  if (base.length < 4 || !base.startsWith('-') || !'-whatif'.startsWith(base)) return false;
+  if (colonIdx === -1) return true;
+  return WHATIF_TRUE_VALUES.has(lower.slice(colonIdx + 1));
 }
 
 // A dry-run/help flag that means "destroys nothing", scoped to the one verb

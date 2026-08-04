@@ -1620,3 +1620,27 @@ test('truncate -s 0 file (a real file alongside the value) is still a destructio
 test('truncate -s+10 (joined, value glued to the flag) with no file operand is still not a destruction (control, grow-safe already exempts it)', () => {
   assert.equal(verdictOf('truncate -s+10'), 'NO_MATCH');
 });
+
+// --- Group 51 (defence round 4, Set T3) - PowerShell Remove-Item
+// aliases. CITED SOURCE: `Get-Alias -Definition Remove-Item`, RUN live on
+// this host (PowerShell 5.1.26100.8972) this session -> del, erase, rd,
+// ri, rm, rmdir. All but `ri` are already covered under their own
+// spelling (del/rm/rmdir as DESTRUCTION_VERBS, erase/rd as
+// NAMED_DESTROYER_VERBS) - `ri` is the one gap ---
+// ships-if-missing: `ri foo.txt` - the alias every PowerShell user
+// actually types - reports NO_MATCH although it IS Remove-Item.
+test('ri is Remove-Item - full DESTRUCTION precision, not just an admission', () => {
+  assert.equal(verdictOf('ri foo.txt'), 'DESTRUCTION');
+});
+
+test('ri -Recurse -Force build is a destruction', () => {
+  assert.equal(verdictOf('ri -Recurse -Force build'), 'DESTRUCTION');
+});
+
+test('ri -WhatIf is still the dry-run switch through the alias (control - full remove-item precision carries over)', () => {
+  assert.equal(verdictOf('ri -WhatIf foo.txt'), 'NO_MATCH');
+});
+
+test('RI is case-insensitive, matching every other verb resolution in this parser', () => {
+  assert.equal(verdictOf('RI foo.txt'), 'DESTRUCTION');
+});

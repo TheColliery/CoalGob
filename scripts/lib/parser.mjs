@@ -821,10 +821,22 @@ function classifyVerb(verb, verbLower, args, heredoc, fdOutOfScope) {
   return { verdict: 'NO_MATCH' };
 }
 
+// PowerShell verb aliases this room's guarded/named verbs already cover
+// under their canonical spelling. CITED SOURCE: `Get-Alias -Definition
+// <cmdlet>`, RUN live on this host (PowerShell 5.1.26100.8972) - not
+// recalled from memory. `sc` (Set-Content's own alias) is DELIBERATELY
+// excluded: it collides with sc.exe, the Windows Service Controller, an
+// unrelated and extremely common command - aliasing it would over-widen
+// this parser's own declared scope onto ordinary `sc query`/`sc start`.
+const POWERSHELL_VERB_ALIASES = {
+  ri: 'remove-item',
+};
+
 function verbAt(words, idx) {
   const raw = words[idx].value;
   const base = basenameOf(raw);
-  return { base, baseLower: stripExeExtension(base).toLowerCase() };
+  const stripped = stripExeExtension(base).toLowerCase();
+  return { base, baseLower: POWERSHELL_VERB_ALIASES[stripped] || stripped };
 }
 
 // Name-only check for a SECONDARY candidate (any candidate past the

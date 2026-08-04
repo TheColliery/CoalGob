@@ -1661,10 +1661,6 @@ test('move (cmd.exe / PowerShell alias for Move-Item) carries mv-over-target sem
   assert.equal(result.findings[0].target, 'b');
 });
 
-test('mi (PowerShell alias for Move-Item) carries the same semantics', () => {
-  assert.equal(verdictOf('mi a b'), 'DESTRUCTION');
-});
-
 test('move -n (no-clobber) is exempt, same as mv -n (control - full mv precision carries over)', () => {
   assert.equal(verdictOf('move -n a b'), 'NO_MATCH');
 });
@@ -1744,4 +1740,48 @@ test('the whole redirection-operator table resolves correctly', () => {
 test('a real 2 fd-dup with a space still names no file (control, exact target check)', () => {
   const result = parseCommand('echo hi 2>& 1');
   assert.equal(result.findings.some((f) => f.target === '1'), false);
+});
+
+// --- Group 55 (defence round 4, T4 correction) - Move-Item's OWN
+// semantics, not mv's. T4 aliased mi/move onto `mv` wholesale, but
+// Move-Item never reaches mv's conditional analysis at all (`move-item`,
+// the canonical cmdlet name, was not in the alias table), and even where
+// `mi` did alias to `mv`, mv's unconditional-by-default overwrite model
+// is WRONG for Move-Item. CITED SOURCE: empirically VERIFIED on this
+// host's PowerShell 5.1 this session - bare `Move-Item a b` onto an
+// existing b throws "Cannot create a file when that file already
+// exists," touching neither file (provably safe regardless of runtime
+// state); `Move-Item -Force a b` onto an existing b succeeds and
+// overwrites it (conditional on b existing at runtime - the same model
+// mv already has). cmd.exe's own `move` is DELIBERATELY left aliased to
+// `mv` unchanged - a live probe suggested it also declines without /Y
+// under non-interactive stdin, but that is a separate, murkier question
+// this fix was not asked to resolve ---
+// ships-if-missing: `Move-Item -Force a.txt b.txt` - a real, unconditional
+// overwrite per the cmdlet's own documented behavior - reports NO_MATCH.
+test('bare Move-Item (no -Force) is not a destruction - provably refuses to overwrite', () => {
+  assert.equal(verdictOf('Move-Item a.txt b.txt'), 'NO_MATCH');
+});
+
+test('Move-Item -Force is a conditional destruction - the cmdlet documented overwrite path', () => {
+  const result = parseCommand('Move-Item -Force a.txt b.txt');
+  assert.equal(result.verdict, 'DESTRUCTION');
+  assert.equal(result.findings[0].conditional, true);
+  assert.equal(result.findings[0].target, 'b.txt');
+});
+
+test('mi -Force (the alias) carries the same Move-Item-specific semantics', () => {
+  assert.equal(verdictOf('mi -Force a.txt b.txt'), 'DESTRUCTION');
+});
+
+test('bare mi (no -Force) is not a destruction, unlike plain mv (control - the alias no longer borrows mv semantics)', () => {
+  assert.equal(verdictOf('mi a.txt b.txt'), 'NO_MATCH');
+});
+
+test('move /Y (cmd.exe, unaffected by this fix) is still a destruction (control)', () => {
+  assert.equal(verdictOf('move /Y a.txt b.txt'), 'DESTRUCTION');
+});
+
+test('plain mv (POSIX, unaffected by this fix) still overwrites unconditionally by its own model (control)', () => {
+  assert.equal(verdictOf('mv a.txt b.txt'), 'DESTRUCTION');
 });

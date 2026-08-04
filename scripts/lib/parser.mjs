@@ -597,6 +597,33 @@ function analyzeMv(args) {
   return { verdict: 'OUT_OF_SCOPE', reason: 'mv argument shape not recognized', kind: KIND_UNJUDGED };
 }
 
+// Move-Item's OWN semantics - NOT mv's. CITED SOURCE: VERIFIED empirically
+// on this host's PowerShell 5.1 this session: bare `Move-Item a b` onto an
+// existing b throws "Cannot create a file when that file already exists,"
+// touching neither file - provably safe regardless of runtime state,
+// unlike mv's unconditional-by-default overwrite. `Move-Item -Force a b`
+// onto an existing b succeeds and overwrites it - conditional on b
+// existing at runtime, the same model mv already has.
+function analyzeMoveItem(args) {
+  const hasForce = args.some((w) => {
+    const lower = w.value.toLowerCase();
+    return lower === '-force' || lower.startsWith('-force:');
+  });
+  if (!hasForce) {
+    return { verdict: 'NO_MATCH' };
+  }
+  const positional = args.filter((w) => !(w.value.length > 1 && w.value.startsWith('-')));
+  if (positional.length === 0) {
+    return { verdict: 'OUT_OF_SCOPE', reason: 'Move-Item argument shape not recognized', kind: KIND_UNJUDGED };
+  }
+  return {
+    verdict: 'DESTRUCTION',
+    verb: 'move-item',
+    target: positional[positional.length - 1].value,
+    conditional: true,
+  };
+}
+
 // --- a listed destruction verb (rm/rmdir/unlink/truncate/del/Remove-Item) --
 
 // The set: PowerShell switch-parameter value syntax. Covered - bare
@@ -766,6 +793,12 @@ function classifyVerb(verb, verbLower, args, heredoc, fdOutOfScope) {
     return unjudgedConstruct(heredoc, fdOutOfScope) || result;
   }
 
+  if (verbLower === 'move-item') {
+    const result = analyzeMoveItem(args);
+    if (result.verdict !== 'NO_MATCH') return result;
+    return unjudgedConstruct(heredoc, fdOutOfScope) || result;
+  }
+
   const unjudged = unjudgedConstruct(heredoc, fdOutOfScope);
   if (unjudged) return unjudged;
 
@@ -869,12 +902,16 @@ function classifyVerb(verb, verbLower, args, heredoc, fdOutOfScope) {
 // this parser's own declared scope onto ordinary `sc query`/`sc start`.
 const POWERSHELL_VERB_ALIASES = {
   ri: 'remove-item',
-  // Get-Alias -Definition Move-Item -> mi, move, mv. mv (POSIX) is
-  // already the canonical spelling analyzeMv's conditional semantics are
-  // written against - mi/move (also cmd.exe's own move, the same real
-  // operation under a third name) resolve to it directly rather than a
-  // separate move-item spelling with its own duplicate logic.
-  mi: 'mv',
+  // Get-Alias -Definition Move-Item -> mi, move, mv. `mi` resolves to
+  // move-item's OWN semantics below (NOT mv's - Move-Item requires
+  // -Force to overwrite, VERIFIED empirically on this host's PowerShell
+  // 5.1: bare Move-Item onto an existing target throws and touches
+  // neither file; -Force succeeds and overwrites). `move` (cmd.exe's own
+  // move, a different program) stays aliased to mv unchanged - a live
+  // probe suggested it also declines without /Y under non-interactive
+  // stdin, but that is a separate, unresolved question this table does
+  // not claim to answer.
+  mi: 'move-item',
   move: 'mv',
 };
 
@@ -893,7 +930,7 @@ function verbAt(words, idx) {
 // OUT_OF_SCOPE, never a false DESTRUCTION on nothing.
 function isSecondaryCandidateNamedVerb(words, idx) {
   const { baseLower } = verbAt(words, idx);
-  return DESTRUCTION_VERBS.has(baseLower) || baseLower === 'mv' || NAMED_DESTROYER_VERBS.has(baseLower) || baseLower === 'git';
+  return DESTRUCTION_VERBS.has(baseLower) || baseLower === 'mv' || baseLower === 'move-item' || NAMED_DESTROYER_VERBS.has(baseLower) || baseLower === 'git';
 }
 
 // --- one segment -------------------------------------------------------

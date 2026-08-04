@@ -922,3 +922,29 @@ test('an input redirect is never itself reported as a destructive target', () =>
   const result = parseCommand('< /dev/null rm -rf build');
   assert.equal(result.findings.some((f) => f.target === '/dev/null'), false);
 });
+
+// --- Group 34 (work unit, Group E) - the --help/grow-safe NO_MATCH
+// exemptions must not skip the fd-out-of-scope check that sits right below
+// them in classifyVerb - a NO_MATCH from analyzeDestructionVerb returned
+// early instead of falling through to it ---
+// ships-if-missing: `rm --help 2> notes.txt` reports NO_MATCH even though
+// bash creates/truncates notes.txt before rm even runs, whatever rm then
+// does with --help - the fd-2 redirect is silently discarded because the
+// --help exemption already returned.
+test('rm --help still leaves a real fd-2 redirect judged, not discarded', () => {
+  assert.equal(verdictOf('rm --help 2> notes.txt'), 'OUT_OF_SCOPE');
+  assert.equal(kindOf('rm --help 2> notes.txt'), 'unjudged');
+});
+
+test('truncate -s +10 (grow-safe) still leaves a real fd-2 redirect judged', () => {
+  assert.equal(verdictOf('truncate -s +10 f 2> notes.txt'), 'OUT_OF_SCOPE');
+  assert.equal(kindOf('truncate -s +10 f 2> notes.txt'), 'unjudged');
+});
+
+test('rm --help with no redirect is still plain NO_MATCH (control)', () => {
+  assert.equal(verdictOf('rm --help'), 'NO_MATCH');
+});
+
+test('truncate -s +10 with no redirect is still plain NO_MATCH (control)', () => {
+  assert.equal(verdictOf('truncate -s +10 f'), 'NO_MATCH');
+});

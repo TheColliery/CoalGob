@@ -431,17 +431,30 @@ function analyzeDestructionVerb(verbLower, args) {
 // the same precise logic (git's own subcommand check included) applies
 // whether the verb was found as the walk's PRIMARY candidate or reached
 // directly (no prefix chain at all).
+function unjudgedConstruct(heredoc, fdOutOfScope) {
+  if (heredoc) return { verdict: 'OUT_OF_SCOPE', reason: 'heredoc present', kind: KIND_UNJUDGED };
+  if (fdOutOfScope) return { verdict: 'OUT_OF_SCOPE', reason: `redirect ${fdOutOfScope.op} not judged`, kind: KIND_UNJUDGED };
+  return null;
+}
+
 function classifyVerb(verb, verbLower, args, heredoc, fdOutOfScope) {
   if (DESTRUCTION_VERBS.has(verbLower)) {
-    return analyzeDestructionVerb(verbLower, args);
+    const result = analyzeDestructionVerb(verbLower, args);
+    // A NO_MATCH exemption (--help, an explicit grow) must not silently
+    // discard a real fd redirect sitting alongside it - fall through to the
+    // same unjudged-construct check every other verb gets.
+    if (result.verdict !== 'NO_MATCH') return result;
+    return unjudgedConstruct(heredoc, fdOutOfScope) || result;
   }
 
   if (verbLower === 'mv') {
-    return analyzeMv(args);
+    const result = analyzeMv(args);
+    if (result.verdict !== 'NO_MATCH') return result;
+    return unjudgedConstruct(heredoc, fdOutOfScope) || result;
   }
 
-  if (heredoc) return { verdict: 'OUT_OF_SCOPE', reason: 'heredoc present', kind: KIND_UNJUDGED };
-  if (fdOutOfScope) return { verdict: 'OUT_OF_SCOPE', reason: `redirect ${fdOutOfScope.op} not judged`, kind: KIND_UNJUDGED };
+  const unjudged = unjudgedConstruct(heredoc, fdOutOfScope);
+  if (unjudged) return unjudged;
 
   if (NAMED_DESTROYER_VERBS.has(verbLower)) {
     return { verdict: 'OUT_OF_SCOPE', reason: `${verbLower} is a direct destroyer this parser does not route`, kind: KIND_UNROUTED };

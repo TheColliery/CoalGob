@@ -20,14 +20,16 @@
 // OUT_OF_SCOPE or a tokenizer error, never a silent NO_MATCH, EXCEPT where
 // noted):
 //   - The verb is resolved past a fixed prefix chain (VAR=value assignments,
-//     sudo/env/nice/time/command, timeout <duration>, and a path-qualified
-//     verb - basename AND a Windows executable extension both stripped) -
-//     a prefix combination outside that chain (e.g. an assignment or a flag
-//     interleaved between two prefix verbs, `env FOO=bar rm x`,
-//     `sudo -u root rm x`) is not walked; the resolver gives up on the
-//     token it cannot place, and the REMAINDER is scanned for a listed
-//     verb - found, OUT_OF_SCOPE (an admission, not a widening); none
-//     found, NO_MATCH (nothing recognizable anywhere in the segment).
+//     sudo/env/nice/time/command, timeout <duration>, sudo's own flags -
+//     value-taking ones with their value, everything else treated as
+//     boolean - and a path-qualified verb: basename AND a Windows
+//     executable extension both stripped). A shape outside that chain
+//     (e.g. an assignment interleaved after a prefix verb, `env FOO=bar
+//     rm x`) is not walked; the resolver gives up on the token it cannot
+//     place, and the REMAINDER is scanned - via the SAME verb resolution -
+//     for a listed verb in genuine command position (flag values and
+//     other commands' arguments are excluded by construction): found,
+//     OUT_OF_SCOPE (an admission, not a widening); none found, NO_MATCH.
 //   - A subshell `( )`, brace group `{ }`, or command substitution `$( )`/
 //     backtick form is recognized ONLY when it opens the segment (word 0);
 //     the same construct appearing later in an argument is invisible.
@@ -67,9 +69,29 @@ function normalizedVerbOf(value) {
 }
 
 // Value-taking sudo flags: the token right after one is an argument (a
-// user/group/prompt/etc.), never a command word. Boolean sudo flags
-// (-H, -i, -n, ...) are skipped alone.
-const SUDO_VALUE_FLAGS = new Set(['-u', '-g', '-p', '-h', '-C', '-D', '-R', '-r', '-T', '-a']);
+// user/group/prompt/etc.), never a command word. `-h` is NOT here - it is
+// boolean (--help), not a value-taking flag; putting it here swallowed the
+// real command behind it. When it is uncertain whether a flag takes a
+// value, do NOT treat it as value-taking: swallowing a token that was
+// actually the COMMAND erases a listed verb and returns NO_MATCH - the
+// silent failure this parser exists to remove. Reading a flag's VALUE as a
+// command merely over-reports OUT_OF_SCOPE (see the `git`-as-username test
+// in the group below), which is the safe direction and a stated
+// non-judgment, never a false safety claim. Any flag NOT in this set is
+// therefore treated as boolean by default - the safe default, not a gap.
+const SUDO_VALUE_FLAGS = new Set(['-u', '-g', '-p', '-t', '-U', '-C', '-D', '-R', '-r', '-T', '-a']);
+
+function skipSudoFlags(words, startIdx) {
+  let i = startIdx;
+  while (i < words.length) {
+    const w = words[i].value;
+    if (w === '--') { i += 1; break; }
+    if (SUDO_VALUE_FLAGS.has(w)) { i += 2; continue; }
+    if (w.length > 1 && w.startsWith('-')) { i += 1; continue; }
+    break;
+  }
+  return i;
+}
 
 const WRAPPER_SCRIPT_VERBS = new Set(['bash', 'sh', 'zsh', 'ksh', 'dash', 'source', '.']);
 const POSIX_INTERPRETER_VERBS = new Set(['node', 'python', 'python3', 'perl', 'ruby']);
@@ -277,7 +299,12 @@ function resolveVerb(words) {
       consumedPrefix = true;
       continue;
     }
-    if (PREFIX_VERBS.has(wLower)) { idx++; consumedPrefix = true; continue; }
+    if (PREFIX_VERBS.has(wLower)) {
+      idx++;
+      consumedPrefix = true;
+      if (wLower === 'sudo') idx = skipSudoFlags(words, idx);
+      continue;
+    }
     break;
   }
   if (idx >= words.length) return null;

@@ -537,8 +537,13 @@ test('env FOO=bar rm (interleaved assignment after a prefix verb) is OUT_OF_SCOP
   assert.equal(verdictOf('env FOO=bar rm x'), 'OUT_OF_SCOPE');
 });
 
-test('sudo -u root rm (a flag argument to sudo) is OUT_OF_SCOPE', () => {
-  assert.equal(verdictOf('sudo -u root rm x'), 'OUT_OF_SCOPE');
+test('sudo -u root rm (round 5 walks the flag, reaching rm itself) is a destruction', () => {
+  // Round 4's give-up remainder scan could only ADMIT a listed verb was
+  // present (OUT_OF_SCOPE); round 5 properly walks sudo's own -u <value>
+  // pair, so `rm` is resolved as the real verb and gets its full,
+  // unconditional destruction verdict - `sudo -u root rm x` genuinely does
+  // delete as root, no different from `sudo rm x`.
+  assert.equal(verdictOf('sudo -u root rm x'), 'DESTRUCTION');
 });
 
 test('a gave-up prefix chain with no listed verb anywhere stays NO_MATCH', () => {
@@ -587,13 +592,63 @@ test('git as a -u flag VALUE (a username) is not a command - not OUT_OF_SCOPE', 
   assert.equal(verdictOf('sudo -u git echo hi'), 'NO_MATCH');
 });
 
-test('git genuinely in command position (after real flags) is still OUT_OF_SCOPE', () => {
-  // Positional reasoning must still catch git when it really IS the next
-  // command - -H is boolean (no value), -u www-data is a flag+value pair,
-  // so "git" is correctly the first real command word here.
-  assert.equal(verdictOf('sudo -H -u www-data git status'), 'OUT_OF_SCOPE');
+test('git genuinely in command position resolves through its OWN precise subcommand check', () => {
+  // -H is boolean (no value), -u www-data is a flag+value pair, so once
+  // round 5 walks past both, `git` is resolved as the REAL verb via the
+  // main path - not the coarse give-up scan - and gets git's own
+  // subcommand precision: `status` isn't destructive, so this is NO_MATCH,
+  // not a blanket OUT_OF_SCOPE. (`git clean`/`rm`/`checkout` in the same
+  // position still correctly report OUT_OF_SCOPE - see the next test.)
+  assert.equal(verdictOf('sudo -H -u www-data git status'), 'NO_MATCH');
+});
+
+test('git clean genuinely in command position is still OUT_OF_SCOPE', () => {
+  assert.equal(verdictOf('sudo -H -u www-data git clean -fdx'), 'OUT_OF_SCOPE');
 });
 
 test('rm as an ARGUMENT to cat (a filename) is not a command - not OUT_OF_SCOPE', () => {
   assert.equal(verdictOf('sudo -u root cat rm'), 'NO_MATCH');
+});
+
+// --- Group 28 (round 5) - fix the WALK, not just the flag table: sudo's own
+// flags are consumed as part of normal verb resolution (boolean flags
+// alone, value-taking flags with their value), so the real command behind
+// them resolves through the main path - not a coarse give-up fallback ---
+// ships-if-missing: `sudo -h rm x` treats -h as value-taking (it is not -
+// -h is --help, boolean) and swallows `rm` along with it; `sudo -t 5 rm x`
+// and `sudo -U root rm x` use flags that DO take a value, and the walk
+// still never reaches `rm` behind them. All five rows must resolve to a
+// full DESTRUCTION, not merely "a listed verb might be present somewhere".
+test('sudo -h rm (boolean flag, not value-taking) still reaches rm', () => {
+  assert.equal(verdictOf('sudo -h rm x'), 'DESTRUCTION');
+});
+
+test('sudo -t <type> rm (value-taking) still reaches rm', () => {
+  assert.equal(verdictOf('sudo -t 5 rm x'), 'DESTRUCTION');
+});
+
+test('sudo -U <user> rm (value-taking) still reaches rm', () => {
+  assert.equal(verdictOf('sudo -U root rm x'), 'DESTRUCTION');
+});
+
+test('sudo -g <group> rm still reaches rm', () => {
+  assert.equal(verdictOf('sudo -g wheel rm x'), 'DESTRUCTION');
+});
+
+test('sudo -p <prompt> rm still reaches rm', () => {
+  assert.equal(verdictOf('sudo -p prompt rm x'), 'DESTRUCTION');
+});
+
+// Composition: the flag walk crossed with N2's path/suffix resolution -
+// neither round 4's nor this round's tests alone exercised a sudo flag
+// PLUS a path-qualified, extension-suffixed verb in the same command.
+test('sudo -u <value> + an absolute, .exe-suffixed rm still reaches rm (flag-walk x N2 crossing)', () => {
+  assert.equal(verdictOf('sudo -u root /bin/rm.exe x'), 'DESTRUCTION');
+});
+
+test('an unknown/unenumerated sudo flag defaults to boolean (the safe direction), never swallows a value', () => {
+  // -Z is not a real sudo flag; the design's stated default for an
+  // uncertain flag is "not value-taking" - skip it alone, so `rm` is the
+  // very next word and is still reached.
+  assert.equal(verdictOf('sudo -Z rm x'), 'DESTRUCTION');
 });

@@ -53,8 +53,21 @@ All notable changes to CoalGob are documented here. Format follows [Keep a Chang
   used everywhere. The remainder scan also gained positional reasoning (R2): it checks only the FIRST
   token genuinely in command position, correctly skipping a value-taking `sudo` flag and its value
   (`-u git` — an ordinary username, not the `git` verb) rather than flat-scanning every word, so
-  `sudo -u root cat rm` (`rm` is `cat`'s argument) is `NO_MATCH` again while `sudo -H -u www-data git
-  status` (`git` genuinely in command position) correctly stays `OUT_OF_SCOPE`.
+  `sudo -u root cat rm` (`rm` is `cat`'s argument) is `NO_MATCH` again. (`sudo -H -u www-data git
+  status`'s verdict at this round was `OUT_OF_SCOPE` via the coarse remainder scan; round 5 below
+  routes it through git's own precise subcommand check instead, correcting it to `NO_MATCH`.)
+
+- **Round 5 (the parser's own rot-canary finding, ruled bigger than the flag table):** fixing the
+  WALK, not just `SUDO_VALUE_FLAGS`. `sudo`'s own flags are now consumed as part of normal verb
+  resolution — value-taking ones with their value, everything else treated as boolean by default
+  (the safe default: misreading a value-taking flag as boolean over-reports `OUT_OF_SCOPE`;
+  misreading a boolean flag as value-taking swallows the real command and silently returns
+  `NO_MATCH`, the exact failure this parser exists to remove). `-h` (`--help`, boolean) is removed
+  from the value-taking set; `-t`/`-U` (genuinely value-taking) are added. Because the real verb now
+  resolves through the MAIN path instead of the coarse give-up remainder scan, it also gets that
+  verb's own precise logic — `sudo -H -u www-data git clean` correctly stays `OUT_OF_SCOPE` while
+  `sudo -H -u www-data git status` is `NO_MATCH`, not a blanket flag on any `git` invocation reached
+  through a prefix chain.
 
 **Deliberately absent, each owed at a stated trigger:**
 

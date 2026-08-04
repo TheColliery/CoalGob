@@ -1702,3 +1702,46 @@ test("Set-Content -Value:'' (colon-joined empty value) still empties its target,
   assert.equal(verdictOf("Set-Content -Value:'' x"), 'OUT_OF_SCOPE');
   assert.equal(kindOf("Set-Content -Value:'' x"), 'unrouted');
 });
+
+// --- Group 54 (defence round 4, Set T6) - the WHOLE POSIX/bash
+// redirection-operator table, enumerated against a source rather than
+// patched two rows. CITED SOURCE: POSIX Open Group shell redirection
+// table (fetched this session), cross-checked empirically against real
+// bash on this host: a pre-existing rw.txt's content survived `<>` byte-
+// for-byte, and `2>& 1` created no file named `1` (fd-duplication, per
+// the standard, tolerates the same optional whitespace `2 > file`
+// already does). Cross-checked against this file's OWN existing handling
+// - < consumes-no-truncate, > truncates (fd1)/fd-out-of-scope (other),
+// >> append-no-truncate, >| forced-truncate, <& / >& descriptor ops,
+// << / <<- / <<< heredocs - all already correct; only <> and >&'s
+// whitespace-tolerant operand were the gaps ---
+// ships-if-missing (<>): `ls <> rw.txt` opens the target for READ-WRITE
+// (POSIX: does not truncate) but the tokenizer read `<` then `>` as two
+// SEPARATE operators, and the second one is an ordinary truncating `>`.
+// ships-if-missing (>&, spaced): `2>& 1` is fd-duplication with
+// whitespace before its digit operand (bash tolerates this the same way
+// `2 > file` tolerates a space around any redirect operator); the digit
+// search started immediately after `>&` with no whitespace-skip, so the
+// space made the operand read empty and S5's own >&word synonym fired,
+// truncating a file literally named `1`.
+test('the whole redirection-operator table resolves correctly', () => {
+  const cases = [
+    ['ls <> rw.txt', 'NO_MATCH'],
+    ['echo hi 2>& 1', 'NO_MATCH'],
+    ['echo hi 2>&1', 'NO_MATCH'],
+    ['echo hi >& out.txt', 'DESTRUCTION'],
+    ['echo hi > out.txt', 'DESTRUCTION'],
+    ['echo hi >> out.txt', 'NO_MATCH'],
+    ['echo hi >| out.txt', 'DESTRUCTION'],
+    ['cmd >&-', 'NO_MATCH'],
+    ['cat <<EOF\nx\nEOF', 'OUT_OF_SCOPE'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});
+
+test('a real 2 fd-dup with a space still names no file (control, exact target check)', () => {
+  const result = parseCommand('echo hi 2>& 1');
+  assert.equal(result.findings.some((f) => f.target === '1'), false);
+});

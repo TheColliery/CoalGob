@@ -329,6 +329,11 @@ function tokenize(input) {
         // fd-duplication (`2>&1`) or fd-close (`>&-`) - a descriptor
         // operation, never a filename target.
         i += 2;
+        // The operand tolerates whitespace before it (POSIX table,
+        // cross-checked live against this host's bash: `2>& 1` still
+        // fd-duplicates and creates no file named `1`) - the same way
+        // `2 > file` already tolerates a space around the operator itself.
+        while (i < n && (input[i] === ' ' || input[i] === '\t')) i++;
         let operand = '';
         if (input[i] === '-') { operand = '-'; i++; }
         else { while (i < n && /[0-9]/.test(input[i])) { operand += input[i]; i++; } }
@@ -356,6 +361,15 @@ function tokenize(input) {
       // `<` inside an open arithmetic context - same as `>` above.
       if (input[i + 1] === '(' || bracketDepth > 0 || parenDepth > 0) {
         tokens.push({ type: 'word', value: '<', end: i + 1 }); i++; continue;
+      }
+      if (input[i + 1] === '>') {
+        // `<>` opens the target for read-write (POSIX redirection table,
+        // cross-checked live against this host's bash: a pre-existing
+        // file's content survives it byte-for-byte) - never truncates.
+        fdPrefixAdjacent();
+        tokens.push({ type: 'op', value: '<>' });
+        i += 2;
+        continue;
       }
       if (input[i + 1] === '<') {
         if (input[i + 2] === '<') { tokens.push({ type: 'op', value: '<<<' }); i += 3; continue; }
@@ -895,10 +909,11 @@ function analyzeSegment(tokens) {
     const t = tokens[idx];
     if (t.type === 'op') {
       if (t.value === '<<' || t.value === '<<-' || t.value === '<<<') { heredoc = true; continue; }
-      if (t.value === '<') {
+      if (t.value === '<' || t.value === '<>') {
         // Consume the target the same way an output redirect does, so it
         // never becomes word 0 and displaces the real verb - but never push
-        // it into `redirects`, since an input redirect is not destructive.
+        // it into `redirects`: an input redirect only reads, and `<>`
+        // (POSIX table) opens for read-write without truncating either.
         const target = tokens[idx + 1];
         if (target && target.type === 'word') idx++;
         continue;

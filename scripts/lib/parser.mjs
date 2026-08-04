@@ -21,9 +21,13 @@
 // noted):
 //   - The verb is resolved past a fixed prefix chain (VAR=value assignments,
 //     sudo/env/nice/time/command, timeout <duration>, and a path-qualified
-//     verb via basename) - a prefix combination outside that chain (e.g.
-//     `env FOO=bar timeout 5 sudo rm x`, interleaved) is not walked and
-//     degrades to NO_MATCH on whatever token ends up at the front.
+//     verb - basename AND a Windows executable extension both stripped) -
+//     a prefix combination outside that chain (e.g. an assignment or a flag
+//     interleaved between two prefix verbs, `env FOO=bar rm x`,
+//     `sudo -u root rm x`) is not walked; the resolver gives up on the
+//     token it cannot place, and the REMAINDER is scanned for a listed
+//     verb - found, OUT_OF_SCOPE (an admission, not a widening); none
+//     found, NO_MATCH (nothing recognizable anywhere in the segment).
 //   - A subshell `( )`, brace group `{ }`, or command substitution `$( )`/
 //     backtick form is recognized ONLY when it opens the segment (word 0);
 //     the same construct appearing later in an argument is invisible.
@@ -48,6 +52,11 @@ const PREFIX_VERBS = new Set(['sudo', 'env', 'nice', 'time', 'command']);
 const TIMEOUT_VERB = 'timeout';
 const ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const DURATION_RE = /^[\d.]+[smhd]?$/;
+const EXECUTABLE_EXTENSION_RE = /\.(exe|cmd|bat|com)$/i;
+
+function stripExeExtension(value) {
+  return value.replace(EXECUTABLE_EXTENSION_RE, '');
+}
 
 const WRAPPER_SCRIPT_VERBS = new Set(['bash', 'sh', 'zsh', 'ksh', 'dash', 'source', '.']);
 const POSIX_INTERPRETER_VERBS = new Set(['node', 'python', 'python3', 'perl', 'ruby']);
@@ -246,20 +255,40 @@ function classifyRedirectOp(op) {
 function resolveVerb(words) {
   let idx = 0;
   while (idx < words.length && ASSIGNMENT_RE.test(words[idx].value)) idx++;
+  let consumedPrefix = idx > 0;
   while (idx < words.length) {
     const wLower = words[idx].value.toLowerCase();
     if (wLower === TIMEOUT_VERB) {
       idx++;
       if (idx < words.length && DURATION_RE.test(words[idx].value)) idx++;
+      consumedPrefix = true;
       continue;
     }
-    if (PREFIX_VERBS.has(wLower)) { idx++; continue; }
+    if (PREFIX_VERBS.has(wLower)) { idx++; consumedPrefix = true; continue; }
     break;
   }
   if (idx >= words.length) return null;
-  const raw = words[idx].value;
+
+  const stuck = words[idx].value;
+  if (consumedPrefix && (stuck.startsWith('-') || stuck.startsWith('/') || ASSIGNMENT_RE.test(stuck))) {
+    // The resolver is mid prefix-chain (sudo/env/timeout/... already
+    // consumed) and the next token isn't a plausible command word either -
+    // a flag argument to the prefix, or an interleaved assignment. Declared
+    // known limit: give up here rather than guess: the caller decides
+    // OUT_OF_SCOPE vs NO_MATCH by scanning the remainder for a listed verb.
+    return { gaveUp: true, remainder: words.slice(idx) };
+  }
+
+  const raw = stuck;
   const base = /[\\/]/.test(raw) ? raw.split(/[\\/]/).pop() : raw;
-  return { base, baseLower: base.toLowerCase(), index: idx };
+  return { base, baseLower: stripExeExtension(base).toLowerCase(), index: idx };
+}
+
+function remainderHasListedVerb(remainder) {
+  return remainder.some((w) => {
+    const wl = stripExeExtension(w.value).toLowerCase();
+    return DESTRUCTION_VERBS.has(wl) || wl === 'mv' || NAMED_DESTROYER_VERBS.has(wl) || wl === 'git';
+  });
 }
 
 // --- mv (ruling 3: conditional on the runtime existence of its target) -----
@@ -293,7 +322,13 @@ function analyzeMv(args) {
 // --- a listed destruction verb (rm/rmdir/unlink/truncate/del/Remove-Item) --
 
 function analyzeDestructionVerb(verbLower, args) {
-  if (args.some((w) => w.value === '--help' || w.value === '--version')) {
+  let endOptions = false;
+  let sawHelpOrVersionFlag = false;
+  for (const w of args) {
+    if (!endOptions && w.value === '--') { endOptions = true; continue; }
+    if (!endOptions && (w.value === '--help' || w.value === '--version')) sawHelpOrVersionFlag = true;
+  }
+  if (sawHelpOrVersionFlag) {
     return { verdict: 'NO_MATCH' };
   }
   if (verbLower === 'truncate') {
@@ -351,6 +386,11 @@ function analyzeSegment(tokens) {
 
   const resolved = resolveVerb(words);
   if (!resolved) return { verdict: 'NO_MATCH' };
+  if (resolved.gaveUp) {
+    return remainderHasListedVerb(resolved.remainder)
+      ? { verdict: 'OUT_OF_SCOPE', reason: 'prefix chain not fully resolved; a listed verb may be present' }
+      : { verdict: 'NO_MATCH' };
+  }
   const verb = resolved.base;
   const verbLower = resolved.baseLower;
   const args = words.slice(resolved.index + 1);

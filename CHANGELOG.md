@@ -34,6 +34,16 @@ All notable changes to CoalGob are documented here. Format follows [Keep a Chang
   limits explicitly. Red proven at the assertion level this round (44 genuine expected-vs-actual
   failures against the unfixed parser, not a module-resolution error) — see `f2926c3`'s red-proof
   finding (M5), closed.
+- **Round 3 (small residue, 1 HIGH + 1 MEDIUM + a head's ruling):** the verb's basename strip only
+  removed the directory, not a Windows executable extension — `rm.exe`, `del.exe`,
+  `C:/tools/rm.exe` silently reported `NO_MATCH`, on this room's own dev platform, in the half of the
+  verb list that exists for Windows (N2). The `--help`/`--version` safety guard now respects `--`
+  end-of-options the way `analyzeMv` already does — `rm -- --help` deletes a real file literally named
+  `--help` and is a destruction again, not a false safety read (N1). Where the verb resolver gives up
+  on a prefix chain it does not walk (an assignment or a flag interleaved between prefix verbs — `env
+  FOO=bar rm x`, `sudo -u root rm x`), the remainder is scanned for a listed verb: found →
+  `OUT_OF_SCOPE` (an admission, not a widening), none found → `NO_MATCH` — the declared-but-silent
+  residual is now a verdict a caller can act on.
 
 **Deliberately absent, each owed at a stated trigger:**
 
@@ -51,5 +61,6 @@ All notable changes to CoalGob are documented here. Format follows [Keep a Chang
   owed at first push.
 - `.githooks/` — `.gitattributes`' LF rule anticipates this dir (matches CoalMine's shape, not
   CoalBoard's, per `0c00c0f` — "one flock, one color" costs less than a hand-trimmed variant) but it
-  is inert until the dir exists; owed at the first build, since it is the only place the public-doc
-  SSoT sync gate (blueprint §13) can run — a CI job cannot see a gitignored `COALGOB_BLUEPRINT.md`.
+  is inert until the dir exists; owed at the unit that adds `scripts/verify.mjs` — the public-doc SSoT
+  sync gate (blueprint §13) needs a gate script to run and a stable §1 to check against, and neither
+  exists yet (this unit's own parser churned §1's identity sentence twice).

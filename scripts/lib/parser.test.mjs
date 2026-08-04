@@ -489,3 +489,58 @@ test('truncate -s +100 (explicit grow) is not a destruction', () => {
 test('truncate -s 0 (shrink to zero) is still a destruction', () => {
   assert.equal(verdictOf('truncate -s 0 f'), 'DESTRUCTION');
 });
+
+// --- Group 23 (N2) - basename strips the DIRECTORY, not the extension ---
+// ships-if-missing: on this room's own dev platform, the Windows-suffixed
+// form of a listed verb (rm.exe, del.exe, a path-qualified rm.exe) is
+// silently NO_MATCH - half the verb list exists FOR Windows.
+test('rm.exe is a destruction', () => {
+  assert.equal(verdictOf('rm.exe x'), 'DESTRUCTION');
+});
+
+test('del.exe is a destruction', () => {
+  assert.equal(verdictOf('del.exe x'), 'DESTRUCTION');
+});
+
+test('a path-qualified rm.exe is a destruction', () => {
+  // Forward slashes, not backslashes: an UNQUOTED backslash is bash's own
+  // escape character (\t outside quotes really does mean literal "t"), so
+  // an unquoted 'C:\tools\rm.exe' is not the path it looks like - that is
+  // real bash behavior, not a parser gap.
+  assert.equal(verdictOf('C:/tools/rm.exe x'), 'DESTRUCTION');
+});
+
+test('cmd.exe /c is OUT_OF_SCOPE like cmd /c', () => {
+  assert.equal(verdictOf('cmd.exe /c "del x"'), 'OUT_OF_SCOPE');
+});
+
+// --- Group 24 (N1) - the --help/--version guard respects -- end-of-options ---
+// ships-if-missing: `rm -- --help` deletes a real file literally named
+// --help and reports NO_MATCH because the guard sees the string "--help"
+// and stops looking, exactly the bug analyzeMv already avoids.
+test('rm -- --help deletes a real file named --help (still a destruction)', () => {
+  assert.equal(verdictOf('rm -- --help'), 'DESTRUCTION');
+});
+
+test('rm --help (no --) is still not a destruction (control)', () => {
+  assert.equal(verdictOf('rm --help'), 'NO_MATCH');
+});
+
+// --- Group 25 (head's ruling) - a gave-up prefix chain degrades to
+// OUT_OF_SCOPE when a listed verb is present in the remainder, never a
+// silent NO_MATCH ---
+// ships-if-missing: `env FOO=bar rm x` / `sudo -u root rm x` - a listed rm,
+// merely wrapped in a prefix shape the resolver's declared limit does not
+// walk - reports NO_MATCH, the exact outcome this whole round exists to
+// remove, with the limit sitting undetected in a comment nobody reads.
+test('env FOO=bar rm (interleaved assignment after a prefix verb) is OUT_OF_SCOPE', () => {
+  assert.equal(verdictOf('env FOO=bar rm x'), 'OUT_OF_SCOPE');
+});
+
+test('sudo -u root rm (a flag argument to sudo) is OUT_OF_SCOPE', () => {
+  assert.equal(verdictOf('sudo -u root rm x'), 'OUT_OF_SCOPE');
+});
+
+test('a gave-up prefix chain with no listed verb anywhere stays NO_MATCH', () => {
+  assert.equal(verdictOf('sudo -u root ls x'), 'NO_MATCH');
+});

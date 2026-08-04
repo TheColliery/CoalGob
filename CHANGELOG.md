@@ -69,6 +69,14 @@ All notable changes to CoalGob are documented here. Format follows [Keep a Chang
   `sudo -H -u www-data git status` is `NO_MATCH`, not a blanket flag on any `git` invocation reached
   through a prefix chain.
 
+**Commit-subject note (reconciled, not rewritten — history is not amended for this):** `b4f018b`
+(round 4) and `276be0a` (round 5) carry a **byte-identical git subject line** — a copy-paste error at
+authoring time, caught after `276be0a` landed. `git log` alone cannot tell them apart; this CHANGELOG
+is the disambiguation. `b4f018b` = round 4's content (the give-up trigger's `/` removal, R1/R2 above).
+`276be0a` = round 5's content (the sudo-flag walk fix, immediately above). Going forward, a second
+batch of fixes landing in one round is titled `(round N, part 2)`, or names what part 1 missed, so
+this cannot recur.
+
 **Deliberately absent, each owed at a stated trigger:**
 
 - `hooks/`, `skills/`, `agents/`, `commands/`, interception code, `scripts/build-plugin.mjs`,

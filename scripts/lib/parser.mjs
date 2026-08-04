@@ -564,6 +564,10 @@ function lastMvOverride(args) {
   let last;
   for (const w of args) {
     const v = w.value;
+    // `--` ends option parsing (the same rule analyzeMv's own positional
+    // loop already honours) - a flag-shaped word after it is a filename,
+    // never an override.
+    if (v === '--') break;
     if (v in MV_OVERRIDE_LONG) { last = MV_OVERRIDE_LONG[v]; continue; }
     if (v.length > 1 && v[0] === '-' && v[1] !== '-') {
       for (const ch of v.slice(1)) {

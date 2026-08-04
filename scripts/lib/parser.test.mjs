@@ -1868,3 +1868,22 @@ test('the whole quoted/escaped [[ set resolves correctly', () => {
     assert.equal(verdictOf(cmd), expected, cmd);
   }
 });
+
+// --- Group 58 (defence round 5, Set U4) - `lastMvOverride` must honour
+// `--` (end of options) the same way `analyzeMv`'s own positional loop
+// already does. After `--`, `-n` is the SOURCE FILENAME, not
+// `--no-clobber` - two option-grammar models in one function,
+// disagreeing, was the defect ---
+// ships-if-missing: `mv -- -n b` overwrites `b` for real (the mv
+// really runs, `-n` is just a file named `-n`) but this parser exempts
+// it as if `-n` had won the no-clobber override.
+test('the whole mv -- (end of options) set resolves correctly', () => {
+  const cases = [
+    ['mv -- -n b', 'DESTRUCTION'],
+    ['mv -n -- a b', 'NO_MATCH'],
+    ['mv -n a b', 'NO_MATCH'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});

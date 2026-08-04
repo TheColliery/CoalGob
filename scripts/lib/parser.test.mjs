@@ -2677,3 +2677,69 @@ test('the whole mv no-op set resolves correctly', () => {
     assert.equal(verdictOf(cmd), expected, cmd);
   }
 });
+
+// --- Group 79 (defence round 8, Set X1) - the ALL-OUTPUTS re-check's own
+// finding: the axis-8 derivation (round 7) enumerated every axis against
+// the VERDICT output only; nobody re-checked axis 1/SITE against the
+// TARGET output. CITED SOURCE: `mv --help`, RUN live on this host -
+// "mv [OPTION]... SOURCE... DIRECTORY" - three or more operands with no
+// -t/--target-directory means the LAST operand IS the destination
+// DIRECTORY (the same concept -t names explicitly, triggered by ARITY
+// instead of a flag). The -t branch (Set W2, defence round 7) already
+// computes the real at-risk path this way for the flagged form; this
+// flagless 3+-operand form fell through to the 2-operand "literal
+// rename" branch instead, reporting the DIRECTORY itself as though it
+// were a FILE about to be overwritten - same SITE gap shape as W2's own
+// finding, one branch fixed and its sibling not.
+// ships-if-missing: `mv a b c` reports `c` (a directory that must
+// already exist for the command to run at all, so this always "blocks")
+// instead of `c/b`, the real at-risk path.
+test('mv with 3+ operands and no -t treats the last as an implicit target directory', () => {
+  const cases = [
+    ['mv a b', 'DESTRUCTION', 'b'],
+    ['mv a b c', 'DESTRUCTION', 'c/b'],
+    ['mv a b c d', 'DESTRUCTION', 'd/c'],
+  ];
+  for (const [cmd, expected, target] of cases) {
+    const result = parseCommand(cmd);
+    assert.equal(result.verdict, expected, cmd);
+    assert.equal(result.findings[0].target, target, cmd);
+  }
+});
+
+// --- Group 80 (defence round 8, Set X2) - AXIS 5 (structural context) +
+// AXIS 7 (SITE): `--` end-of-options is already honoured by `analyzeMv`'s
+// own positional loop and by `lastMvOverride`/`truncateGrowSize` (Set
+// U4/W7's own fix) - `mvTargetDirectory` scans the SAME `args` array for
+// a different purpose and had no `--` awareness at all, so a literal
+// FILE spelled `--target-directory=foo` after `--` was mistaken for the
+// flag itself.
+// ships-if-missing: `mv -- --target-directory=foo bar` (a 2-source
+// literal rename, `--target-directory=foo` being an ordinary filename)
+// reports a fabricated `foo/bar` target instead of the real `bar`.
+test('mvTargetDirectory honours -- end-of-options (Set X2)', () => {
+  const result = parseCommand('mv -- --target-directory=foo bar');
+  assert.equal(result.verdict, 'DESTRUCTION');
+  assert.equal(result.findings[0].target, 'bar');
+});
+
+// --- Group 81 (defence round 8, Set X3) - the ALL-OUTPUTS re-check's
+// `conditional` cell: asserted `true` for mv/Move-Item's own DESTRUCTION
+// shape in four prior tests, never asserted for the OTHER DESTRUCTION
+// shape (a listed verb via `analyzeDestructionVerb`, or a truncating
+// redirect) - both already correct by construction, neither locked by a
+// test, so a future edit could flip either silently. Enumerating, not a
+// behaviour change.
+test('conditional is false for an unconditional destruction, true for a runtime-dependent one', () => {
+  const cases = [
+    ['rm -rf build', false],
+    ['> important.log', false],
+    ['mv a b', true],
+    ['Move-Item -Force a b', true],
+  ];
+  for (const [cmd, expected] of cases) {
+    const result = parseCommand(cmd);
+    assert.equal(result.verdict, 'DESTRUCTION', cmd);
+    assert.equal(result.findings[0].conditional, expected, cmd);
+  }
+});

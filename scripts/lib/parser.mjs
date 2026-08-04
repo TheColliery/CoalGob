@@ -793,6 +793,11 @@ function isMvBackupFlag(v) {
 function mvTargetDirectory(args) {
   for (let i = 0; i < args.length; i++) {
     const v = args[i].value;
+    // `--` ends option parsing (the same rule `analyzeMv`'s own
+    // positional loop and `lastMvOverride` already honour, Set U4/W7's
+    // own SITE fix) - a `--target-directory`-shaped word after it is a
+    // FILENAME, never the flag (Set X2, defence round 8).
+    if (v === '--') break;
     if (v === '-t' || v === '--target-directory') return { dir: args[i + 1]?.value, skipIdx: i + 1 };
     if (v.startsWith('--target-directory=')) return { dir: v.slice('--target-directory='.length), skipIdx: -1 };
   }
@@ -859,11 +864,34 @@ function analyzeMv(args) {
     };
   }
 
-  if (positional.length >= 2) {
+  if (positional.length >= 3) {
+    // GNU mv's OWN "SOURCE... DIRECTORY" form, CITED SOURCE `mv --help`
+    // RUN live: "mv [OPTION]... SOURCE... DIRECTORY" - three or more
+    // operands with no -t/--target-directory means the LAST operand IS
+    // the destination DIRECTORY, the same concept -t names explicitly,
+    // triggered by ARITY instead of a flag (Set X1, defence round 8 -
+    // the ALL-OUTPUTS re-check's own finding: the -t branch above
+    // already computed the real at-risk path this way; this flagless
+    // form fell through to the 2-operand literal-rename branch below,
+    // reporting the DIRECTORY itself - a path that must already exist
+    // for the command to run at all, so it always "blocked"). Same
+    // convention the -t branch already uses for multiple sources: report
+    // the LAST source's own computed at-risk path as representative.
+    const directory = positional[positional.length - 1];
+    const lastSource = positional[positional.length - 2];
     return {
       verdict: 'DESTRUCTION',
       verb: 'mv',
-      target: positional[positional.length - 1],
+      target: posix.join(directory, posix.basename(lastSource)),
+      conditional: true,
+    };
+  }
+
+  if (positional.length === 2) {
+    return {
+      verdict: 'DESTRUCTION',
+      verb: 'mv',
+      target: positional[1],
       conditional: true,
     };
   }

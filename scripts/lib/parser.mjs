@@ -154,8 +154,8 @@ const POSIX_INTERPRETER_VERBS = new Set(['node', 'python', 'python3', 'perl', 'r
 const POSIX_ONE_LINER_FLAGS = new Set(['-e', '-c']);
 const WINDOWS_ONE_LINER_VERBS = new Set(['pwsh', 'powershell']);
 const PKG_MANAGERS = new Set(['npm', 'yarn', 'pnpm', 'bun']);
-const GIT_DESTRUCTIVE_SUBCOMMANDS = new Set(['clean', 'rm', 'checkout']);
-const NAMED_DESTROYER_VERBS = new Set(['shred', 'dd', 'eval']);
+const GIT_DESTRUCTIVE_SUBCOMMANDS = new Set(['clean', 'rm', 'checkout', 'restore']);
+const NAMED_DESTROYER_VERBS = new Set(['shred', 'dd', 'eval', 'erase']);
 const SCRIPT_EXTENSION = /\.(sh|ps1|py|pl|rb)$/i;
 
 const NULL_SINKS = new Set([
@@ -456,6 +456,12 @@ function classifyVerb(verb, verbLower, args, heredoc, fdOutOfScope) {
   }
   if (verbLower === 'git' && GIT_DESTRUCTIVE_SUBCOMMANDS.has(args[0]?.value)) {
     return { verdict: 'OUT_OF_SCOPE', reason: `git ${args[0].value} is a direct destroyer this parser does not route`, kind: KIND_UNROUTED };
+  }
+  if (verbLower === 'git' && args[0]?.value === 'reset' && args.some((w) => w.value === '--hard')) {
+    // A bare `git reset` (soft/mixed, the default) never touches the
+    // working tree - only --hard overwrites tracked files, so the flag
+    // gate is load-bearing, not an approximation.
+    return { verdict: 'OUT_OF_SCOPE', reason: 'git reset --hard is a direct destroyer this parser does not route', kind: KIND_UNROUTED };
   }
   if (verbLower === 'npx' && args[0]?.value === 'rimraf') {
     return { verdict: 'OUT_OF_SCOPE', reason: 'npx rimraf is a direct destroyer this parser does not route', kind: KIND_UNROUTED };

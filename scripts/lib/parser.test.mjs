@@ -867,3 +867,34 @@ test('doas rm is a destruction', () => {
 test('ionice -c3 rm is a destruction', () => {
   assert.equal(verdictOf('ionice -c3 rm -rf build'), 'DESTRUCTION');
 });
+
+// --- Group 32 (work unit, Group F) - named-destroyer additions, all onto
+// the OUT_OF_SCOPE admission list, never DESTRUCTION_VERBS (the owner's
+// closed guarded list) ---
+// ships-if-missing: `erase` (cmd.exe's exact synonym for `del`, which IS
+// guarded), `git restore` (the modern replacement for `git checkout --`,
+// already OUT_OF_SCOPE), and `git reset --hard` (overwrites tracked files)
+// all report NO_MATCH - a listed-verb-equivalent going unrecognized purely
+// by spelling.
+test('erase is OUT_OF_SCOPE, not NONE (cmd.exe synonym for del)', () => {
+  assert.equal(verdictOf('erase important.txt'), 'OUT_OF_SCOPE');
+  assert.equal(kindOf('erase important.txt'), 'unrouted');
+});
+
+test('git restore is OUT_OF_SCOPE (modern replacement for git checkout --)', () => {
+  assert.equal(verdictOf('git restore .'), 'OUT_OF_SCOPE');
+  assert.equal(kindOf('git restore .'), 'unrouted');
+});
+
+test('git reset --hard is OUT_OF_SCOPE (overwrites the working tree)', () => {
+  assert.equal(verdictOf('git reset --hard'), 'OUT_OF_SCOPE');
+  assert.equal(kindOf('git reset --hard'), 'unrouted');
+});
+
+test('bare git reset (no --hard) stays NO_MATCH - soft/mixed do not touch the working tree', () => {
+  assert.equal(verdictOf('git reset'), 'NO_MATCH');
+});
+
+test('git reset --soft stays NO_MATCH (control)', () => {
+  assert.equal(verdictOf('git reset --soft HEAD~1'), 'NO_MATCH');
+});

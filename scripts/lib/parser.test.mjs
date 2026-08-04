@@ -2319,6 +2319,31 @@ test('the whole [n]>&word fd-discard and empty-target set resolves correctly', (
   }
 });
 
+// --- Group 73 (defence round 7, Set W4) - AXIS 1 (spelling - a THIRD
+// spelling of the verb `rm`, escape-DECODED rather than a bare quoted
+// literal). Round 5's U6 closed the quoting FORM of `$'...'` (the `$`
+// consumed, content taken literally) but explicitly named escape
+// decoding as an unclosed boundary - this closes it. CITED, verified
+// live on this host's bash this round: `$'\x72\x6d'` and
+// `$'\162\155'` both decode to the word `rm` and run it ---
+// ships-if-missing: `$'\x72\x6d' -rf x` deletes `x` for real (bash
+// decodes the hex escape to `rm` and runs it) while this parser
+// reports NO_MATCH, because the escape sequence was taken as ten
+// literal characters instead of being decoded.
+test('the whole ANSI-C escape-decoding set resolves correctly', () => {
+  const cases = [
+    ["$'\\x72\\x6d' -rf x", 'DESTRUCTION'],
+    ["$'\\162\\155' -rf x", 'DESTRUCTION'],
+    ["$'rm' f", 'DESTRUCTION'],
+    ["$'r\\x6d' f", 'DESTRUCTION'],
+    ["echo hi > $'\\x66'", 'DESTRUCTION'],
+    ["$'echo' hi", 'NO_MATCH'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});
+
 test('no listed verb throws when invoked bare or with flags only', () => {
   for (const verb of EVERY_LISTED_VERB) {
     for (const cmd of [verb, `${verb} -f`, `${verb} --flag`]) {

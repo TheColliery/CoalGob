@@ -488,16 +488,53 @@ function tokenize(input) {
     while (i < n) {
       const ch = input[i];
       if (ch === ' ' || ch === '\t' || ch === '\n' || ';|&><'.includes(ch)) break;
-      // ANSI-C quoting (`$'...'`) and locale-translation quoting
-      // (`$"..."`) - bash expands both to the quoted string's content
-      // and runs the result (`$'rm'` -> `rm`). The introducing `$` is
-      // consumed here without joining the value; the quote branches
-      // below then take over exactly as for a plain quoted string.
-      // Boundary, stated: ANSI-C's own backslash-escape decoding
-      // (`$'\x72\x6d'`) is NOT performed - content is taken literally,
-      // like an ordinary single-quoted string; this fix resolves the
-      // reported shape (a bare quoted verb), not full ANSI-C decoding.
-      if (ch === '$' && (input[i + 1] === "'" || input[i + 1] === '"')) { i++; continue; }
+      // ANSI-C quoting (`$'...'`) - CITED, verified live on this host's
+      // bash this round: `$'\x72\x6d'` and `$'\162\155'` both decode to
+      // the word `rm` and run it. Decodes the well-known escape set
+      // (backslash/quote/question-mark literals, the named control
+      // chars, octal `\nnn`, hex `\xHH`, control-char `\cX`). Boundary,
+      // stated: `\uHHHH`/`\UHHHHHHHH` unicode escapes are NOT decoded -
+      // this parser's verb tables are ASCII strings by construction, so
+      // a unicode-escaped spelling could never match one regardless.
+      if (ch === '$' && input[i + 1] === "'") {
+        sawQuote = true;
+        i += 2;
+        let closed = false;
+        while (i < n) {
+          const dc = input[i];
+          if (dc === "'") { i++; closed = true; break; }
+          if (dc === '\\' && i + 1 < n) {
+            const esc = input[i + 1];
+            const simple = {
+              a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f', n: '\n',
+              r: '\r', t: '\t', v: '\v', '\\': '\\', "'": "'", '"': '"', '?': '?',
+            };
+            if (esc in simple) { value += simple[esc]; i += 2; continue; }
+            if (esc === 'x') {
+              const hex = /^[0-9a-fA-F]{1,2}/.exec(input.slice(i + 2, i + 4));
+              if (hex) { value += String.fromCharCode(parseInt(hex[0], 16)); i += 2 + hex[0].length; continue; }
+            }
+            if (/[0-7]/.test(esc)) {
+              const oct = /^[0-7]{1,3}/.exec(input.slice(i + 1, i + 4));
+              if (oct) { value += String.fromCharCode(parseInt(oct[0], 8) & 0xff); i += 1 + oct[0].length; continue; }
+            }
+            if (esc === 'c' && i + 2 < n) {
+              value += String.fromCharCode(input[i + 2].toUpperCase().charCodeAt(0) ^ 0x40);
+              i += 3; continue;
+            }
+            value += esc; i += 2; continue;
+          }
+          value += dc; i++;
+        }
+        if (!closed) { errors.push('unterminated ANSI-C quote'); i = n; brokeOnError = true; break; }
+        continue;
+      }
+      // Locale-translation quoting (`$"..."`) - with no translation
+      // catalog bash yields the literal string, so the introducing `$`
+      // is consumed without joining the value and the plain double-
+      // quote branch below takes over unchanged (its own escaping rules
+      // already apply - this is NOT ANSI-C quoting).
+      if (ch === '$' && input[i + 1] === '"') { i++; continue; }
       if (ch === '\\') {
         if (input[i + 1] === '\n') { i += 2; continue; }
         if (i + 1 >= n) { errors.push('trailing backslash at end of command'); i = n; brokeOnError = true; break; }

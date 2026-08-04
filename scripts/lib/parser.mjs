@@ -428,6 +428,12 @@ function tokenize(input) {
       if (ch === '\\') {
         if (input[i + 1] === '\n') { i += 2; continue; }
         if (i + 1 >= n) { errors.push('trailing backslash at end of command'); i = n; brokeOnError = true; break; }
+        // Escaping a character is quoting it (POSIX shell grammar) - a
+        // backslash-escaped keyword (`\[\[`) loses its keyword-hood the
+        // same way a quoted one does, so this sets the same `sawQuote`
+        // flag `[[`'s command-position gate and fdPrefixAdjacent's
+        // digit check already rely on.
+        sawQuote = true;
         value += input[i + 1]; i += 2; continue;
       }
       if (ch === "'") {
@@ -459,10 +465,14 @@ function tokenize(input) {
     }
     if (brokeOnError && value === '' && i === startI + 1) continue;
     if (i > startI || value !== '') {
-      const opensTest = value === '[[' && isCommandPosition(tokens);
+      // `[[`/`]]` are keywords only as a BARE, unquoted, unescaped word -
+      // quoting or escaping either bracket strips its keyword-hood (same
+      // rule bash applies to any reserved word), so a quoted/escaped
+      // occurrence is inert data and must never open or close the test.
+      const opensTest = value === '[[' && !sawQuote && isCommandPosition(tokens);
       tokens.push({ type: 'word', value, end: i, quoted: sawQuote });
       if (opensTest) bracketDepth++;
-      else if (value === ']]' && bracketDepth > 0) bracketDepth--;
+      else if (value === ']]' && !sawQuote && bracketDepth > 0) bracketDepth--;
     }
   }
 

@@ -1841,3 +1841,30 @@ test('the whole cmd.exe no-op-flag set resolves correctly', () => {
     assert.equal(verdictOf(cmd), expected, cmd);
   }
 });
+
+// --- Group 57 (defence round 5, Set U3) - a `[[` only opens a bracket
+// test when it is a BARE, unquoted, unescaped keyword. `opensTest`
+// gated on command position but never on `quoted` - a quoted or
+// backslash-escaped `[[` is an ordinary word (bash strips its
+// keyword-hood the same way quoting/escaping strips any keyword's),
+// so the redirect after it is real. Fixed at the source: the tokenizer
+// now also marks a backslash-escaped word as `quoted` (matching what
+// quoting already means for `fdPrefixAdjacent`'s digit check) ---
+// ships-if-missing: `'[[' > f` truncates `f` (bash creates/empties it
+// before "command not found" prints) while this parser reports
+// NO_MATCH, because the quoted word still opened `bracketDepth` and
+// every later `>` in the segment was demoted to an inert word.
+test('the whole quoted/escaped [[ set resolves correctly', () => {
+  const cases = [
+    ["'[[' > f", 'DESTRUCTION'],
+    ['"[[" > f', 'DESTRUCTION'],
+    ['\\[\\[ > f', 'DESTRUCTION'],
+    ['! "[[" > f', 'DESTRUCTION'],
+    ['if "[[" > f; then :; fi', 'DESTRUCTION'],
+    ['[[ -f a ]] > f', 'DESTRUCTION'],
+    ['if [[ -f a ]]; then rm b; fi', 'DESTRUCTION'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});

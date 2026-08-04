@@ -58,6 +58,19 @@ function stripExeExtension(value) {
   return value.replace(EXECUTABLE_EXTENSION_RE, '');
 }
 
+function basenameOf(value) {
+  return /[\\/]/.test(value) ? value.split(/[\\/]/).pop() : value;
+}
+
+function normalizedVerbOf(value) {
+  return stripExeExtension(basenameOf(value)).toLowerCase();
+}
+
+// Value-taking sudo flags: the token right after one is an argument (a
+// user/group/prompt/etc.), never a command word. Boolean sudo flags
+// (-H, -i, -n, ...) are skipped alone.
+const SUDO_VALUE_FLAGS = new Set(['-u', '-g', '-p', '-h', '-C', '-D', '-R', '-r', '-T', '-a']);
+
 const WRAPPER_SCRIPT_VERBS = new Set(['bash', 'sh', 'zsh', 'ksh', 'dash', 'source', '.']);
 const POSIX_INTERPRETER_VERBS = new Set(['node', 'python', 'python3', 'perl', 'ruby']);
 const POSIX_ONE_LINER_FLAGS = new Set(['-e', '-c']);
@@ -270,25 +283,47 @@ function resolveVerb(words) {
   if (idx >= words.length) return null;
 
   const stuck = words[idx].value;
-  if (consumedPrefix && (stuck.startsWith('-') || stuck.startsWith('/') || ASSIGNMENT_RE.test(stuck))) {
-    // The resolver is mid prefix-chain (sudo/env/timeout/... already
-    // consumed) and the next token isn't a plausible command word either -
-    // a flag argument to the prefix, or an interleaved assignment. Declared
-    // known limit: give up here rather than guess: the caller decides
-    // OUT_OF_SCOPE vs NO_MATCH by scanning the remainder for a listed verb.
+  // A leading '-' is a flag argument to the prefix (sudo -u, sudo -H, ...);
+  // an interleaved assignment is env's own `env FOO=bar cmd` shape. A
+  // leading '/' is NOT included here - it is an ordinary POSIX absolute
+  // path to the next command (`sudo /bin/rm`, the normal way sudo is
+  // written on Linux), never a flag for any verb in PREFIX_VERBS (none of
+  // sudo/env/nice/time/command takes a `/`-prefixed flag).
+  if (consumedPrefix && (stuck.startsWith('-') || ASSIGNMENT_RE.test(stuck))) {
+    // The resolver is mid prefix-chain and the next token isn't a
+    // plausible command word either. Declared known limit: give up here
+    // rather than guess: the caller decides OUT_OF_SCOPE vs NO_MATCH by
+    // scanning the remainder, with the SAME verb resolution (basename +
+    // exe-extension stripping) this function itself uses below.
     return { gaveUp: true, remainder: words.slice(idx) };
   }
 
-  const raw = stuck;
-  const base = /[\\/]/.test(raw) ? raw.split(/[\\/]/).pop() : raw;
+  const base = basenameOf(stuck);
   return { base, baseLower: stripExeExtension(base).toLowerCase(), index: idx };
 }
 
+// Positional reasoning over a gave-up remainder: find the first token that
+// is genuinely in COMMAND position (skipping sudo's own flags and the
+// values of ones that take them), and check ONLY that token. A listed
+// verb's name showing up later - as a flag's value (`-u git`) or as
+// another command's own argument (`cat rm`) - is not that verb being
+// invoked, and must not be flagged.
+function firstCommandWordOf(remainder) {
+  let i = 0;
+  while (i < remainder.length) {
+    const w = remainder[i].value;
+    if (SUDO_VALUE_FLAGS.has(w)) { i += 2; continue; }
+    if (w === '--' || w.startsWith('-') || ASSIGNMENT_RE.test(w)) { i += 1; continue; }
+    return w;
+  }
+  return null;
+}
+
 function remainderHasListedVerb(remainder) {
-  return remainder.some((w) => {
-    const wl = stripExeExtension(w.value).toLowerCase();
-    return DESTRUCTION_VERBS.has(wl) || wl === 'mv' || NAMED_DESTROYER_VERBS.has(wl) || wl === 'git';
-  });
+  const word = firstCommandWordOf(remainder);
+  if (word === null) return false;
+  const wl = normalizedVerbOf(word);
+  return DESTRUCTION_VERBS.has(wl) || wl === 'mv' || NAMED_DESTROYER_VERBS.has(wl) || wl === 'git';
 }
 
 // --- mv (ruling 3: conditional on the runtime existence of its target) -----

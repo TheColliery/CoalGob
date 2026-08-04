@@ -544,3 +544,56 @@ test('sudo -u root rm (a flag argument to sudo) is OUT_OF_SCOPE', () => {
 test('a gave-up prefix chain with no listed verb anywhere stays NO_MATCH', () => {
   assert.equal(verdictOf('sudo -u root ls x'), 'NO_MATCH');
 });
+
+// --- Group 26 (R1, CRITICAL regression) - a POSIX absolute path after a
+// prefix verb is not a Windows-style flag; it is the next command, and the
+// round-3 give-up path must not eat it ---
+// ships-if-missing: `sudo /bin/rm -rf /tmp/x` - the single most ordinary
+// way `sudo` is written on any Linux box - is NO_MATCH, because the same
+// `stuck.startsWith('/')` guard meant for `/c`-style flags also catches
+// every absolute path. This is the H4 (prefix chain) x N2 (path/suffix
+// resolution) crossing neither round's tests exercised alone.
+test('sudo + an absolute path to rm is still a destruction (H4 x N2 crossing)', () => {
+  assert.equal(verdictOf('sudo /bin/rm -rf /tmp/x'), 'DESTRUCTION');
+});
+
+test('env + an absolute path to rm is still a destruction (H4 x N2 crossing)', () => {
+  assert.equal(verdictOf('env /bin/rm x'), 'DESTRUCTION');
+});
+
+test('timeout <duration> + an absolute path to rm is still a destruction', () => {
+  assert.equal(verdictOf('timeout 5 /bin/rm x'), 'DESTRUCTION');
+});
+
+test('sudo + a Windows-exe-suffixed rm is still a destruction (H4 x N2 crossing)', () => {
+  assert.equal(verdictOf('sudo rm.exe x'), 'DESTRUCTION');
+});
+
+test('/bin/rm alone (no prefix) is still a destruction (control)', () => {
+  assert.equal(verdictOf('/bin/rm x'), 'DESTRUCTION');
+});
+
+test('sudo rm (no path) is still a destruction (control)', () => {
+  assert.equal(verdictOf('sudo rm x'), 'DESTRUCTION');
+});
+
+// --- Group 27 (R2, MEDIUM) - the give-up remainder scan needs positional
+// reasoning: a listed verb's NAME appearing as a flag's VALUE or as another
+// command's ARGUMENT is not that verb being invoked ---
+// ships-if-missing: `sudo -u git ...` is OUT_OF_SCOPE for every ordinary
+// user named "git" (an ordinary username), and `cat rm` is OUT_OF_SCOPE
+// because "rm" is cat's argument, not a command.
+test('git as a -u flag VALUE (a username) is not a command - not OUT_OF_SCOPE', () => {
+  assert.equal(verdictOf('sudo -u git echo hi'), 'NO_MATCH');
+});
+
+test('git genuinely in command position (after real flags) is still OUT_OF_SCOPE', () => {
+  // Positional reasoning must still catch git when it really IS the next
+  // command - -H is boolean (no value), -u www-data is a flag+value pair,
+  // so "git" is correctly the first real command word here.
+  assert.equal(verdictOf('sudo -H -u www-data git status'), 'OUT_OF_SCOPE');
+});
+
+test('rm as an ARGUMENT to cat (a filename) is not a command - not OUT_OF_SCOPE', () => {
+  assert.equal(verdictOf('sudo -u root cat rm'), 'NO_MATCH');
+});

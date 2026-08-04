@@ -44,6 +44,17 @@ All notable changes to CoalGob are documented here. Format follows [Keep a Chang
   FOO=bar rm x`, `sudo -u root rm x`), the remainder is scanned for a listed verb: found →
   `OUT_OF_SCOPE` (an admission, not a widening), none found → `NO_MATCH` — the declared-but-silent
   residual is now a verdict a caller can act on.
+- **Round 4 (1 CRITICAL regression from round 3's own give-up guard + 1 MEDIUM):** the give-up trigger
+  written for a Windows `/c`-style flag also caught every POSIX absolute path, so `sudo /bin/rm -rf
+  /tmp/x` — the ordinary way `sudo` is written on any Linux box — silently read `NO_MATCH` (R1). A
+  leading `/` is no longer part of the trigger (no verb in the prefix chain — `sudo`/`env`/`nice`/
+  `time`/`command` — ever takes a `/`-prefixed flag), and the give-up remainder scan now shares the
+  exact same verb resolution (basename + exe-extension stripping) as the main path — one resolver,
+  used everywhere. The remainder scan also gained positional reasoning (R2): it checks only the FIRST
+  token genuinely in command position, correctly skipping a value-taking `sudo` flag and its value
+  (`-u git` — an ordinary username, not the `git` verb) rather than flat-scanning every word, so
+  `sudo -u root cat rm` (`rm` is `cat`'s argument) is `NO_MATCH` again while `sudo -H -u www-data git
+  status` (`git` genuinely in command position) correctly stays `OUT_OF_SCOPE`.
 
 **Deliberately absent, each owed at a stated trigger:**
 

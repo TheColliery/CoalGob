@@ -673,6 +673,13 @@ function classifyRedirectOp(op) {
 // run of PREFIX_VERBS/timeout) and stops - it never tries to classify what
 // comes after. What comes after (flags, more assignments, the real verb)
 // is the generic walk's job in analyzeSegment, not this function's.
+// ponytail: 59 lines at declaration (defence round 7, grown by W1's `for`
+// forward-scan branch) - over the 50-line function-length signal. The
+// `for` branch is a self-contained lookahead that belongs beside the
+// other prefix-consuming branches it shares a loop with; splitting it out
+// would separate one branch of one dispatch from its siblings for no
+// cohesion gain. Extraction, if ever warranted, rides the same future
+// unit as the file-header's own deferred split - not done piecemeal here.
 function resolveVerb(words) {
   let idx = 0;
   while (idx < words.length && ASSIGNMENT_RE.test(words[idx].value)) idx++;
@@ -792,6 +799,15 @@ function mvTargetDirectory(args) {
   return null;
 }
 
+// ponytail: 62 lines at declaration (defence round 7, grown by W2's
+// target-directory recognition + --backup exemption) - over the 50-line
+// function-length signal. The target-directory branch and the backup
+// exemption are both single early-return checks on the SAME `args` this
+// function already owns end-to-end (override flags, positional counting,
+// the final verdict) - splitting either out would hand a caller half of
+// mv's own decision and the other half back, for no cohesion gain.
+// Extraction, if ever warranted, rides the same future unit as the file-
+// header's own deferred split - not done piecemeal here.
 function analyzeMv(args) {
   // A bare invocation (no operands at all) touches nothing - the same
   // "no positional argument" exemption class analyzeDestructionVerb

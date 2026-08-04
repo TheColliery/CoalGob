@@ -116,11 +116,36 @@ function kindOf(cmd) {
 //    Miss, twice more: V2 (prefix word never normalized), U4/U7 (`--`
 //    honoured in one function, not its sibling in the same file).
 //
+// 8. BEHAVIOUR EQUIVALENCE (accepted defence round 7 - the 8th-axis
+//    candidate this room's own audit named and did not decide) - two
+//    constructs sharing a NAME RESOLUTION do not thereby share a
+//    BEHAVIOUR. Axis 1 (spelling) asks "is this the same unit?"; axis 8
+//    asks "do the two units act the same?" - a question axis 1
+//    structurally cannot answer, because a correct alias resolution
+//    (`Get-Alias` really does say `mi` -> `Move-Item`) is orthogonal to
+//    whether the TARGET's real semantics match what the ALIASED command
+//    would have done.
+//    Source: this room's own T4 correction - VERIFIED empirically (RAN,
+//    not read) by a live PowerShell session testing Move-Item's actual
+//    overwrite behaviour against mv's.
+//    Miss: T4's first pass routed `mi`/`move` onto `mv`'s existing
+//    conditional-destruction logic because the ALIAS resolved correctly;
+//    nobody had yet checked whether `Move-Item`'s real behaviour matches
+//    `mv`'s. It doesn't - `mv` overwrites by default, `Move-Item` refuses
+//    without `-Force`. Its own operational form, inherited from the
+//    predecessor whose fix this was: if a fix routes one verb through
+//    another's EXISTING function, verify by RUNNING the aliased command
+//    itself, not just its alias-table entry, that their real behaviours
+//    match.
+//
 // Not merged with the above despite superficial similarity: the ORIGINAL
 // four's "verb" and "flag spelling" collapse into axis 1's two levels; wave
 // 6's "site" and "invocation channel" are kept as axes 7 and 6 unchanged
-// (already precisely named, nothing to generalize). Net: two axes merged
-// into one, two new axes derived (3, 5) - SEVEN total, not six, not padded.
+// (already precisely named, nothing to generalize). Net from the round-7
+// derivation: two axes merged into one, two new axes derived (3, 5) - SEVEN
+// total, not six. Axis 8 (BEHAVIOUR EQUIVALENCE) was accepted separately,
+// the same dispatch, as a genuinely distinct question axis 1-7 cannot ask -
+// EIGHT total as of defence round 7's fix wave.
 // =============================================================================
 
 // --- Group 1: false positives (a quoted argument is not a command) ---

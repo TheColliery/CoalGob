@@ -596,13 +596,33 @@ function analyzeMv(args) {
 // actually resolves at runtime.
 const WHATIF_TRUE_VALUES = new Set(['$true', 'true', '1']);
 
+function isWhatIfName(base) {
+  return base.length >= 4 && base.startsWith('-') && '-whatif'.startsWith(base);
+}
+
 function isRemoveItemWhatIf(value) {
   const lower = value.toLowerCase();
   const colonIdx = lower.indexOf(':');
   const base = colonIdx === -1 ? lower : lower.slice(0, colonIdx);
-  if (base.length < 4 || !base.startsWith('-') || !'-whatif'.startsWith(base)) return false;
+  if (!isWhatIfName(base)) return false;
   if (colonIdx === -1) return true;
   return WHATIF_TRUE_VALUES.has(lower.slice(colonIdx + 1));
+}
+
+// The set: PowerShell's `-Name:Value` colon-binding syntax, CITED SOURCE
+// PowerShell's parameter-binding syntax - VERIFIED empirically on this
+// host's PowerShell 5.1 this session (a [string] parameter bound
+// correctly via `-Path:foo.txt`, proving the form is not switch-
+// specific). A colon-joined flag on remove-item therefore supplies a
+// real operand UNLESS its name is -WhatIf (a switch, handled separately
+// by isRemoveItemWhatIf - its value means dry-run on/off, not a file).
+// Boundary: scoped to remove-item, the only PowerShell cmdlet among
+// DESTRUCTION_VERBS.
+function isColonValueFlag(verbLower, value) {
+  if (verbLower !== 'remove-item' || !value.startsWith('-')) return false;
+  const idx = value.indexOf(':');
+  if (idx <= 0 || idx >= value.length - 1) return false;
+  return !isWhatIfName(value.slice(0, idx).toLowerCase());
 }
 
 // A dry-run/help flag that means "destroys nothing", scoped to the one verb
@@ -664,6 +684,7 @@ function analyzeDestructionVerb(verbLower, args) {
     if (!endOptions && isNoOpFlag(verbLower, w)) { sawNoOpFlag = true; continue; }
     if (!endOptions && isWindowsSwitch(verbLower, w)) continue;
     if (!endOptions && isValueTakingFlag(verbLower, w)) { i++; continue; }
+    if (!endOptions && isColonValueFlag(verbLower, w)) { hasPositional = true; continue; }
     if (!endOptions && w.length > 1 && w.startsWith('-')) continue;
     hasPositional = true;
   }
@@ -694,7 +715,11 @@ function analyzeDestructionVerb(verbLower, args) {
 // not in scope.
 function isSetContentClear(args) {
   const idx = args.findIndex((w) => w.value.toLowerCase() === '-value');
-  return idx !== -1 && args[idx + 1]?.value === '';
+  if (idx !== -1 && args[idx + 1]?.value === '') return true;
+  // The same colon-binding syntax T5 verified for remove-item applies
+  // here too: `-Value:''`/`-Value:""` tokenizes as one word ending in `:`
+  // (the quotes strip to nothing, leaving no content after the colon).
+  return args.some((w) => w.value.toLowerCase() === '-value:');
 }
 
 // Every check that decides what a resolved verb word MEANS, extracted so

@@ -1672,3 +1672,33 @@ test('move -n (no-clobber) is exempt, same as mv -n (control - full mv precision
 test('MOVE is case-insensitive', () => {
   assert.equal(verdictOf('MOVE a b'), 'DESTRUCTION');
 });
+
+// --- Group 53 (defence round 4, Set T5) - PowerShell's `-Name:Value`
+// colon-binding syntax, beyond the one switch (-WhatIf) S1 taught it for.
+// CITED SOURCE: PowerShell's parameter-binding syntax, VERIFIED
+// empirically on this host's PowerShell 5.1 this session - a test
+// function with a [string] parameter bound correctly via `-Path:foo.txt`
+// exactly like `-Path foo.txt`, proving the colon form is not switch-
+// specific. Boundary, stated: only remove-item is scoped (the only
+// PowerShell cmdlet among DESTRUCTION_VERBS) ---
+// ships-if-missing: `Remove-Item -Path:f.txt -Force` supplies its file
+// entirely through colon syntax; the old flag-detection saw a token
+// starting with `-` and skipped it as a plain flag, so no operand was
+// ever recognized and the no-operand exemption fired on a command that
+// names a real file.
+test('Remove-Item -Path:f.txt (colon-bound value) supplies a real operand', () => {
+  assert.equal(verdictOf('Remove-Item -Path:f.txt -Force'), 'DESTRUCTION');
+});
+
+test('-WhatIf:$false is still excluded from the colon-value operand rule (control - it is a switch, not a value parameter)', () => {
+  assert.equal(verdictOf('Remove-Item -WhatIf:$false f.txt'), 'DESTRUCTION');
+});
+
+test('-WhatIf:$true alone (no other operand) still correctly finds no positional file (control)', () => {
+  assert.equal(verdictOf('Remove-Item -WhatIf:$true'), 'NO_MATCH');
+});
+
+test("Set-Content -Value:'' (colon-joined empty value) still empties its target, the same rule applied to the verb it was found on", () => {
+  assert.equal(verdictOf("Set-Content -Value:'' x"), 'OUT_OF_SCOPE');
+  assert.equal(kindOf("Set-Content -Value:'' x"), 'unrouted');
+});

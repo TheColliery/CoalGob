@@ -685,6 +685,17 @@ function isNoOpFlag(verbLower, value) {
 // inspected; -c/-o/-r never affect grow-safety, clustered or not.
 const TRUNCATE_JOINED_S_RE = /^-[a-zA-Z]*s(.*)$/;
 
+// The set: GNU truncate's SIZE modifier prefixes. CITED SOURCE:
+// `truncate --help`, RUN live on this host - "SIZE may also be prefixed
+// by one of the following modifying characters: '+' extend by, '-'
+// reduce by, '<' at most, '>' at least, '/' round down to multiple of,
+// '%' round up to multiple of." Axes, all six covered: '+' (extend),
+// '>' (at least - grows only if smaller) and '%' (round UP) can never
+// shrink the file - the same provable-grow class defence round 4
+// exempted for '+' alone. '-' (reduce), '<' (at most - shrinks only if
+// larger) and '/' (round DOWN) can shrink and stay DESTRUCTION.
+const TRUNCATE_GROW_ONLY_PREFIXES = new Set(['+', '>', '%']);
+
 function truncateGrowSize(args) {
   let size;
   for (let i = 0; i < args.length; i++) {
@@ -734,10 +745,10 @@ function analyzeDestructionVerb(verbLower, args) {
   }
   if (verbLower === 'truncate') {
     const sizeValue = truncateGrowSize(args);
-    if (sizeValue && sizeValue.startsWith('+')) {
-      // An explicit grow (-s/--size, joined or separated) can never shrink
-      // the file, regardless of its current size - the one truncate shape
-      // provably safe without a runtime stat.
+    if (sizeValue && TRUNCATE_GROW_ONLY_PREFIXES.has(sizeValue[0])) {
+      // A grow-only modifier (-s/--size, joined or separated) can never
+      // shrink the file, regardless of its current size - the class of
+      // truncate shapes provably safe without a runtime stat.
       return { verdict: 'NO_MATCH' };
     }
   }

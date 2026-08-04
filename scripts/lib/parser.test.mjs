@@ -1785,3 +1785,32 @@ test('move /Y (cmd.exe, unaffected by this fix) is still a destruction (control)
 test('plain mv (POSIX, unaffected by this fix) still overwrites unconditionally by its own model (control)', () => {
   assert.equal(verdictOf('mv a.txt b.txt'), 'DESTRUCTION');
 });
+
+// --- Group 55 (defence round 5, Set U1) - the WHOLE truncate SIZE
+// modifier grammar. CITED SOURCE: `truncate --help`, RUN live on this
+// host - "SIZE may also be prefixed by one of the following modifying
+// characters: '+' extend by, '-' reduce by, '<' at most, '>' at least,
+// '/' round down to multiple of, '%' round up to multiple of." Axes:
+// all six modifiers, short/long/joined spellings. '+' (extend) and '>'
+// (at least - only grows if smaller) and '%' (round UP) can never
+// shrink the file - the same provable-grow class the code already
+// exempted for '+' alone. '-' (reduce), '<' (at most - only shrinks if
+// larger) and '/' (round DOWN) can shrink and stay DESTRUCTION ---
+// ships-if-missing: `truncate -s '>100' f` is a provable "extend if
+// smaller, never shrink" but was flagged as a destruction because only
+// the '+' prefix was recognized as grow-safe.
+test('the whole truncate SIZE-modifier set resolves correctly', () => {
+  const cases = [
+    ["truncate -s '+10' f", 'NO_MATCH'],
+    ["truncate -s '>100' f", 'NO_MATCH'],
+    ["truncate -s '%2' f", 'NO_MATCH'],
+    ["truncate --size='>100' f", 'NO_MATCH'],
+    ["truncate -s '-10' f", 'DESTRUCTION'],
+    ["truncate -s '<100' f", 'DESTRUCTION'],
+    ["truncate -s '/2' f", 'DESTRUCTION'],
+    ['truncate -s 0 f', 'DESTRUCTION'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});

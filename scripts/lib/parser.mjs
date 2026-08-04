@@ -1401,9 +1401,16 @@ function analyzeSegment(tokens, precededByPipe) {
   // already classified correctly.
   const truncatingRedirects = classified.filter((r) => r.kind === 'truncate' && !isNonFileSink(r.target));
   if (truncatingRedirects.length > 0) {
+    // Schema ruling (defence round 8): a redirect has an OPERATOR
+    // (`1>`/`>|`/`&>`, ...), never a command/cmdlet name - reporting it
+    // under `verb` (every command-based finding's field) put two
+    // incompatible types behind one name with no way to recover the type
+    // from the shape. `operator` is exclusive with `verb` on every
+    // finding this parser emits - see the return-shape doc above
+    // parseCommand.
     return {
       verdict: 'DESTRUCTION',
-      findings: truncatingRedirects.map((r) => ({ verb: r.op, target: r.target, conditional: false })),
+      findings: truncatingRedirects.map((r) => ({ operator: r.op, target: r.target, conditional: false })),
     };
   }
   // A non-stdout fd redirect to a non-file sink (`2>/dev/null`) truncates
@@ -1473,6 +1480,26 @@ function analyzeSegment(tokens, precededByPipe) {
 }
 
 // --- entry point -----------------------------------------------------------
+
+// RETURN SHAPE (schema ruling, defence round 8, ALL-OUTPUTS re-check):
+//   { verdict: 'DESTRUCTION' | 'OUT_OF_SCOPE' | 'NO_MATCH', findings: [...] }
+// A DESTRUCTION finding is one of two SHAPES, never a blend:
+//   - a command-based destruction: { verdict, verb, target?, conditional }
+//     - `verb` is a real command/cmdlet name (`rm`, `mv`, `move-item`, ...).
+//     - `target` is absent ONLY for the pipeline-bound Remove-Item shape
+//       (axis 6, invocation channel) - no lexical path exists to report.
+//   - a redirect-based destruction: { verdict, operator, target, conditional }
+//     - `operator` is a shell redirect operator string (`1>`, `>|`, `&>`,
+//       ...), never a command name.
+// INVARIANT: exactly one of `verb` / `operator` is present on any finding
+// this parser emits - never both, never neither. `verb` and `operator` are
+// NOT interchangeable and a consumer MUST branch on which key is present
+// before dispatching a remedy strategy, never assume `verb` covers both
+// (the defect this ruling closed: a redirect's operator string was
+// previously reported AS `verb`, indistinguishable by field name alone
+// from a real command). An OUT_OF_SCOPE/NO_MATCH finding carries neither
+// key - `reason`/`kind` instead (see the `kind` partition comment near
+// KIND_DECLARED above).
 
 export function parseCommand(input) {
   if (typeof input !== 'string') {

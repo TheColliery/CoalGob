@@ -175,32 +175,27 @@ function kindOf(cmd) {
 //                     (W6) never reaches `target` either - see the SITE
 //                     row, same root cause. conditional/reason/kind:
 //                     UNCHECKED.
-//   7 SITE           - target: FIXED (X1, mv's 3+-operand implicit-
-//                     directory form) - AND STILL OPEN, more broadly than
-//                     this round closed: `analyzeDestructionVerb`
-//                     (rm/rmdir/unlink/truncate/del/remove-item - the
-//                     MAJORITY of this parser's guarded verb list) never
-//                     populates `target` AT ALL, for any input - its own
-//                     positional-scan loop sets a boolean (`hasPositional`)
-//                     and discards the token, where `analyzeMv`/
-//                     `analyzeMoveItem`/the redirect-classification path
-//                     all capture and report the real operand. This is the
-//                     single largest EMPTY cell this re-check found, and it
-//                     is left OPEN (not fixed this round) - the owner has
-//                     ruled a block always hands back the recoverable form
-//                     of the SAME destruction, and `target`'s current
-//                     shape (one string, one file) does not obviously
-//                     generalize to a verb whose real grammar is
-//                     `FILE...` (one or more operands, `rm a b` deletes
-//                     BOTH) - a schema decision (singular `target` vs a
-//                     `targets` list), not a citation gap, and therefore a
-//                     head ruling, not a coder-decided fix. verb: the
-//                     redirect-truncate DESTRUCTION shape reports
-//                     `verb: truncating.op` (a redirect operator string
-//                     like `1>`/`&>`) where every other DESTRUCTION shape
-//                     reports a real command/cmdlet name - one field name,
-//                     two incompatible meanings, never enumerated, same
-//                     open schema question as the `target` gap above.
+//   7 SITE           - target: FIXED, in full (X1/Y1/Y2a/Y2c across
+//                     defence round 8). What was once the single largest
+//                     EMPTY cell this re-check found -
+//                     `analyzeDestructionVerb` (rm/rmdir/unlink/truncate/
+//                     del/remove-item) discarding every operand instead
+//                     of reporting it - is closed (Set Y1); mv/redirect-
+//                     truncate now report EVERY at-risk path, not just
+//                     the last one found (Set Y2a/Y2c). The schema
+//                     question this row used to defer to a head ruling
+//                     (singular `target` vs a list) was resolved by
+//                     making the FINDING the list - a segment now emits
+//                     one finding per path, each still `target: string`.
+//                     verb: RULED and CLOSED - the redirect-truncate
+//                     shape reported `verb: truncating.op` (an operator
+//                     string like `1>`/`&>`) under the SAME field name
+//                     every command-based DESTRUCTION uses for a real
+//                     command/cmdlet name. Split: `operator` for a
+//                     redirect finding, `verb` for a command finding,
+//                     exactly one present on any finding - see the
+//                     return-shape comment above `parseCommand` in
+//                     parser.mjs for the enforced invariant.
 //   8 BEHAVIOUR EQUIVALENCE - every output: UNCHECKED beyond verdict (no
 //                     wave has hit this axis at all yet, per the round-7
 //                     handover).
@@ -2913,4 +2908,62 @@ test('a segment with multiple real truncating redirects reports every one (Set Y
   assert.ok(result.findings.every((f) => f.conditional === false));
   // Single-redirect segments are unaffected (control).
   assert.deepEqual(parseCommand('> important.log').findings.map((f) => f.target), ['important.log']);
+});
+
+// --- Group 85 (defence round 8, schema ruling) - `verb` split from
+// `operator`. A redirect-truncate finding used to report its operator
+// string (`1>`/`>|`/`&>`) under the SAME `verb` field every command-based
+// finding uses for a real command/cmdlet name - one field name, two
+// incompatible types, recoverable only from PROSE, never from the shape.
+// RULED: split. A redirect finding carries `operator`, never `verb`; a
+// command finding carries `verb`, never `operator` - exactly one present
+// on any DESTRUCTION finding this parser emits (see the return-shape
+// comment above `parseCommand` in parser.mjs). Walks a representative
+// command through every DESTRUCTION-producing site in the file
+// (analyzeDestructionVerb incl. its pipeline-bound shape, analyzeMv's
+// three branches, analyzeMoveItem, the redirect-truncate branch) - not
+// just the one site this round touched.
+// ships-if-missing: a consumer dispatching a remedy strategy on `verb`
+// silently mis-treats a redirect operator as a command name (or the
+// reverse), because nothing in the shape says which field is live.
+test('verb and operator are mutually exclusive, and the RIGHT one, on every DESTRUCTION finding (Set Y3)', () => {
+  // Mutual exclusivity alone does not discriminate the closed defect -
+  // the OLD shape also had exactly one of the two present (always
+  // `verb`, holding an operator string for the redirect case). The
+  // real assertion is WHICH key is present, and that it holds the
+  // right TYPE of value.
+  const commandBased = [
+    'rm -rf build',
+    'rm a b c',
+    'Get-ChildItem *.log | Remove-Item -Force',
+    'mv a b',
+    'mv -t /tmp a b',
+    'mv a b c',
+    'Move-Item -Force a b',
+  ];
+  for (const cmd of commandBased) {
+    const result = parseCommand(cmd);
+    assert.equal(result.verdict, 'DESTRUCTION', cmd);
+    for (const finding of result.findings) {
+      assert.ok('verb' in finding, `${cmd}: expected a verb field`);
+      assert.ok(!('operator' in finding), `${cmd}: must not carry operator`);
+      assert.match(finding.verb, /^[a-z-]+$/i, `${cmd}: verb "${finding.verb}" looks like a redirect operator, not a command name`);
+    }
+  }
+
+  const redirectBased = ['> important.log', 'echo hi > a > b'];
+  for (const cmd of redirectBased) {
+    const result = parseCommand(cmd);
+    assert.equal(result.verdict, 'DESTRUCTION', cmd);
+    for (const finding of result.findings) {
+      assert.ok('operator' in finding, `${cmd}: expected an operator field`);
+      assert.ok(!('verb' in finding), `${cmd}: must not carry verb`);
+      assert.ok(finding.operator.includes('>'), `${cmd}: operator "${finding.operator}" does not look like a redirect operator`);
+    }
+  }
+
+  // OUT_OF_SCOPE/NO_MATCH findings carry neither key (control).
+  const outOfScope = parseCommand('shred -u f');
+  assert.equal(outOfScope.verdict, 'OUT_OF_SCOPE');
+  assert.ok(!('verb' in outOfScope.findings[0]) && !('operator' in outOfScope.findings[0]));
 });

@@ -53,6 +53,8 @@
 //     that resolves to one of these under a different name is not caught,
 //     because this parser never touches the filesystem (ruling 3).
 
+import { posix } from 'node:path';
+
 const SEGMENT_SEPARATORS = new Set([';', '&&', '||', '|', '&', '\n']);
 
 // Partition of every OUT_OF_SCOPE site, set explicitly at each return - never
@@ -166,8 +168,12 @@ const FD_SINK_RE = /^\/(dev\/fd|proc\/self\/fd)\/\d+$/;
 const WINDOWS_UNC_NUL_PREFIX = '\\\\.\\';
 
 function isNonFileSink(target) {
-  if (NULL_SINKS.has(target)) return true;
-  if (FD_SINK_RE.test(target)) return true;
+  // Lexical normalization only (pure string op, no filesystem access -
+  // ruling 3 holds) - collapses a trivially different spelling of the same
+  // POSIX device path (`/dev/./null`, `/dev/../dev/null`) before comparing.
+  const normalized = posix.normalize(target);
+  if (NULL_SINKS.has(normalized)) return true;
+  if (FD_SINK_RE.test(normalized)) return true;
   const stripped = target.startsWith(WINDOWS_UNC_NUL_PREFIX) ? target.slice(WINDOWS_UNC_NUL_PREFIX.length) : target;
   return stripped.toLowerCase() === 'nul';
 }
@@ -432,25 +438,53 @@ function analyzeMv(args) {
 
 // --- a listed destruction verb (rm/rmdir/unlink/truncate/del/Remove-Item) --
 
+// A dry-run/help flag that means "destroys nothing", scoped to the one verb
+// each spelling actually belongs to - a Windows-only or PowerShell-only
+// switch has no meaning for the other listed verbs.
+function isNoOpFlag(verbLower, value) {
+  if (value === '--help' || value === '--version') return true;
+  if (verbLower === 'del' && value === '/?') return true;
+  if (verbLower === 'remove-item' && value.toLowerCase() === '-whatif') return true;
+  return false;
+}
+
+function truncateGrowSize(args) {
+  const shortIdx = args.findIndex((w) => w.value === '-s');
+  if (shortIdx !== -1) return args[shortIdx + 1]?.value;
+  const longIdx = args.findIndex((w) => w.value === '--size');
+  if (longIdx !== -1) return args[longIdx + 1]?.value;
+  const joined = args.find((w) => w.value.startsWith('--size='));
+  return joined ? joined.value.slice('--size='.length) : undefined;
+}
+
 function analyzeDestructionVerb(verbLower, args) {
   let endOptions = false;
-  let sawHelpOrVersionFlag = false;
+  let sawNoOpFlag = false;
+  let hasPositional = false;
   for (const w of args) {
     if (!endOptions && w.value === '--') { endOptions = true; continue; }
-    if (!endOptions && (w.value === '--help' || w.value === '--version')) sawHelpOrVersionFlag = true;
+    if (!endOptions && isNoOpFlag(verbLower, w.value)) { sawNoOpFlag = true; continue; }
+    if (!endOptions && w.value.length > 1 && w.value.startsWith('-')) continue;
+    hasPositional = true;
   }
-  if (sawHelpOrVersionFlag) {
+  if (sawNoOpFlag) {
     return { verdict: 'NO_MATCH' };
   }
   if (verbLower === 'truncate') {
-    const sIdx = args.findIndex((w) => w.value === '-s');
-    const sizeArg = sIdx !== -1 ? args[sIdx + 1] : undefined;
-    if (sizeArg && sizeArg.value.startsWith('+')) {
-      // An explicit grow can never shrink the file, regardless of its
-      // current size - the one truncate shape provably safe without a
-      // runtime stat.
+    const sizeValue = truncateGrowSize(args);
+    if (sizeValue && sizeValue.startsWith('+')) {
+      // An explicit grow (-s/--size, joined or separated) can never shrink
+      // the file, regardless of its current size - the one truncate shape
+      // provably safe without a runtime stat.
       return { verdict: 'NO_MATCH' };
     }
+  }
+  if (!hasPositional) {
+    // No operand at all - nothing for this verb to destroy. Known
+    // imprecision, accepted: a flag's own VALUE (e.g. truncate's `-s 0`)
+    // also counts as positional here, since it does not start with `-`;
+    // harmless while a real file operand is always present alongside it.
+    return { verdict: 'NO_MATCH' };
   }
   return { verdict: 'DESTRUCTION', verb: verbLower, conditional: false };
 }

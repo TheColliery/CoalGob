@@ -996,3 +996,82 @@ test('>( process substitution is not a truncating redirect', () => {
 test('<( process substitution is not an input-redirect target either', () => {
   assert.equal(verdictOf('diff <(sort a) <(sort b)'), 'NO_MATCH');
 });
+
+// --- Group 36 (work unit, Group D2) - the remaining five false positives ---
+
+// D2a - truncate's grow-is-safe check only inspected -s; --size=+N and
+// --size +N grow identically and were missed.
+test('truncate --size=+10 (joined long form, explicit grow) is not a destruction', () => {
+  assert.equal(verdictOf('truncate --size=+10 growing.log'), 'NO_MATCH');
+});
+
+test('truncate --size +10 (separated long form, explicit grow) is not a destruction', () => {
+  assert.equal(verdictOf('truncate --size +10 growing.log'), 'NO_MATCH');
+});
+
+test('truncate --size=0 (joined long form, real shrink) is still a destruction (control)', () => {
+  assert.equal(verdictOf('truncate --size=0 growing.log'), 'DESTRUCTION');
+});
+
+test('truncate --size 0 (separated long form, real shrink) is still a destruction (control)', () => {
+  assert.equal(verdictOf('truncate --size 0 growing.log'), 'DESTRUCTION');
+});
+
+// D2b - Remove-Item -WhatIf is PowerShell's dry-run switch; it deletes
+// nothing.
+test('Remove-Item -WhatIf is not a destruction (dry-run switch)', () => {
+  assert.equal(verdictOf('Remove-Item -WhatIf important.txt'), 'NO_MATCH');
+});
+
+test('remove-item -whatif is not a destruction, case-insensitively', () => {
+  assert.equal(verdictOf('remove-item -whatif file'), 'NO_MATCH');
+});
+
+test('Remove-Item with no -WhatIf is still a destruction (control)', () => {
+  assert.equal(verdictOf('Remove-Item important.txt'), 'DESTRUCTION');
+});
+
+// D2c - a listed verb with no positional operand destroys nothing.
+test('bare rm (no operand) is not a destruction', () => {
+  assert.equal(verdictOf('rm'), 'NO_MATCH');
+});
+
+test('rm -f (no operand) is not a destruction', () => {
+  assert.equal(verdictOf('rm -f'), 'NO_MATCH');
+});
+
+test('rm -rf (no operand) is not a destruction', () => {
+  assert.equal(verdictOf('rm -rf'), 'NO_MATCH');
+});
+
+test('bare rmdir (no operand) is not a destruction (the check is verb-general)', () => {
+  assert.equal(verdictOf('rmdir'), 'NO_MATCH');
+});
+
+test('rm -rf /tmp/x (a real operand) is still a destruction (control)', () => {
+  assert.equal(verdictOf('rm -rf /tmp/x'), 'DESTRUCTION');
+});
+
+// D2d - `/?` is cmd.exe's help switch, the Windows spelling of the
+// existing POSIX --help/--version exemption.
+test('del /? is not a destruction (cmd.exe help switch)', () => {
+  assert.equal(verdictOf('del /?'), 'NO_MATCH');
+});
+
+test('del with a real file is still a destruction (control)', () => {
+  assert.equal(verdictOf('del file'), 'DESTRUCTION');
+});
+
+// D2e - a lexically-different spelling of the same non-file sink is still
+// recognized (normalization only, no filesystem access - ruling 3 holds).
+test('a lexically-normalized /dev/./null is recognized as the null sink', () => {
+  assert.equal(verdictOf('cat a > /dev/./null'), 'NO_MATCH');
+});
+
+test('a lexically-normalized /dev/../dev/null is recognized as the null sink', () => {
+  assert.equal(verdictOf('cat a > /dev/../dev/null'), 'NO_MATCH');
+});
+
+test('a genuinely different target that merely resembles the sink spelling is still a destruction (control)', () => {
+  assert.equal(verdictOf('cat a > /dev/./nullfile'), 'DESTRUCTION');
+});

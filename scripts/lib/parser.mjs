@@ -636,14 +636,35 @@ function truncateGrowSize(args) {
   return size;
 }
 
+// cmd.exe's del/erase synopsis (`del /?`, this host, live): "DEL [/P] [/F]
+// [/S] [/Q] [/A[[:]attributes]] names" - switches are `/`-prefixed, not
+// `-`, so D2's generic `-`-prefix flag check never recognized one.
+function isWindowsSwitch(verbLower, value) {
+  return verbLower === 'del' && /^\/[A-Za-z]/.test(value);
+}
+
+// truncate's synopsis (`truncate --help`, this host, live): "Usage:
+// truncate OPTION... FILE..." with "-s, --size=SIZE" as the one value-
+// taking option - FILE is a separate required operand from -s's own
+// value, so a bare `-s`/`--size`/a clustered `-Xs` (value in the NEXT
+// token) must skip that token too, or its value miscounts as FILE.
+const TRUNCATE_BARE_S_CLUSTER_RE = /^-[a-zA-Z]*s$/;
+
+function isValueTakingFlag(verbLower, value) {
+  return verbLower === 'truncate' && (value === '--size' || TRUNCATE_BARE_S_CLUSTER_RE.test(value));
+}
+
 function analyzeDestructionVerb(verbLower, args) {
   let endOptions = false;
   let sawNoOpFlag = false;
   let hasPositional = false;
-  for (const w of args) {
-    if (!endOptions && w.value === '--') { endOptions = true; continue; }
-    if (!endOptions && isNoOpFlag(verbLower, w.value)) { sawNoOpFlag = true; continue; }
-    if (!endOptions && w.value.length > 1 && w.value.startsWith('-')) continue;
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i].value;
+    if (!endOptions && w === '--') { endOptions = true; continue; }
+    if (!endOptions && isNoOpFlag(verbLower, w)) { sawNoOpFlag = true; continue; }
+    if (!endOptions && isWindowsSwitch(verbLower, w)) continue;
+    if (!endOptions && isValueTakingFlag(verbLower, w)) { i++; continue; }
+    if (!endOptions && w.length > 1 && w.startsWith('-')) continue;
     hasPositional = true;
   }
   if (sawNoOpFlag) {

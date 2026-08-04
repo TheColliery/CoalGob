@@ -1575,3 +1575,48 @@ test('a genuine destructive verb inside the for-loop BODY is still caught (contr
 test('a real ; still separates segments once the arithmetic header has genuinely closed (control)', () => {
   assert.equal(verdictOf('echo hi; rm -rf x'), 'DESTRUCTION');
 });
+
+// --- Group 50 (defence round 4, Set T2) - the D2 no-operand exemption,
+// completed for del/truncate. CITED SOURCE: each verb's own live synopsis
+// on this host - `cmd.exe /c "del /?"` -> "DEL [/P] [/F] [/S] [/Q]
+// [/A[[:]attributes]] names" (names required, switches are `/`-prefixed,
+// not `-`); `truncate --help` -> "Usage: truncate OPTION... FILE..."
+// with "-s, --size=SIZE" as the one value-taking option (FILE is a
+// SEPARATE required operand from -s's own value) ---
+// ships-if-missing (del): a Windows `/switch` is not `-`-prefixed, so
+// D2's flag-detection never recognized it as a flag at all - `del /q`
+// (no file) reads `/q` itself as the positional file operand.
+// ships-if-missing (truncate): `-s 0`'s VALUE `0` is not `-`-prefixed
+// either, so with no real FILE operand present it is miscounted as one -
+// `truncate -s 0` (no file) reports a destruction on nothing.
+test('del /q with no file operand is not a destruction', () => {
+  assert.equal(verdictOf('del /q'), 'NO_MATCH');
+});
+
+test('del /f /s with no file operand is not a destruction', () => {
+  assert.equal(verdictOf('del /f /s'), 'NO_MATCH');
+});
+
+test('del /q file.txt (a real Windows switch plus a real file) is still a destruction (control)', () => {
+  assert.equal(verdictOf('del /q file.txt'), 'DESTRUCTION');
+});
+
+test('truncate -s 0 with no file operand is not a destruction', () => {
+  assert.equal(verdictOf('truncate -s 0'), 'NO_MATCH');
+});
+
+test('truncate --size 0 with no file operand is not a destruction', () => {
+  assert.equal(verdictOf('truncate --size 0'), 'NO_MATCH');
+});
+
+test('truncate -cs 0 (clustered value-taking flag) with no file operand is not a destruction', () => {
+  assert.equal(verdictOf('truncate -cs 0'), 'NO_MATCH');
+});
+
+test('truncate -s 0 file (a real file alongside the value) is still a destruction (control)', () => {
+  assert.equal(verdictOf('truncate -s 0 file'), 'DESTRUCTION');
+});
+
+test('truncate -s+10 (joined, value glued to the flag) with no file operand is still not a destruction (control, grow-safe already exempts it)', () => {
+  assert.equal(verdictOf('truncate -s+10'), 'NO_MATCH');
+});

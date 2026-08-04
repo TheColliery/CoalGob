@@ -247,11 +247,17 @@ function isNonFileSink(target) {
 // Is the token about to be pushed in bash COMMAND POSITION - segment start,
 // or right after a keyword that can open a compound command? A `[[` here
 // opens a test; a `[[` anywhere else is data (an argument, quoted or not).
+// RECURSIVE, not just a spelling check: a preceder word (`do`/`then`/etc)
+// only counts if IT was itself in command position when it was pushed
+// (`prev.commandPos`, set at push time below) AND is not quoted - `do` as
+// an ORDINARY ARGUMENT (`echo do [[ ... ]]`) is not the keyword, the same
+// way a quoted `"do"` is not the keyword. Without this, the gate trusted
+// the previous word's bare SPELLING regardless of where it came from.
 function isCommandPosition(tokens) {
   const prev = tokens[tokens.length - 1];
   if (!prev) return true;
   if (prev.type === 'op' && SEGMENT_SEPARATORS.has(prev.value)) return true;
-  return prev.type === 'word' && BRACKET_TEST_PRECEDERS.has(prev.value);
+  return prev.type === 'word' && !prev.quoted && prev.commandPos === true && BRACKET_TEST_PRECEDERS.has(prev.value);
 }
 
 // ponytail: 206 lines at declaration (defence round 3) - over the 50-line
@@ -512,8 +518,14 @@ function tokenize(input) {
       // quoting or escaping either bracket strips its keyword-hood (same
       // rule bash applies to any reserved word), so a quoted/escaped
       // occurrence is inert data and must never open or close the test.
-      const opensTest = value === '[[' && !sawQuote && isCommandPosition(tokens);
-      tokens.push({ type: 'word', value, end: i, quoted: sawQuote });
+      // Computed once, BEFORE this token is pushed (it reads only the
+      // already-pushed tokens) - reused both for the opensTest decision
+      // right below and stored on the token itself, so a LATER word
+      // checking "was the preceder before me a real keyword" has the
+      // answer without re-walking the tokens array.
+      const commandPos = isCommandPosition(tokens);
+      const opensTest = value === '[[' && !sawQuote && commandPos;
+      tokens.push({ type: 'word', value, end: i, quoted: sawQuote, commandPos });
       if (opensTest) bracketDepth++;
       else if (value === ']]' && !sawQuote && bracketDepth > 0) bracketDepth--;
     }

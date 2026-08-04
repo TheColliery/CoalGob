@@ -1989,6 +1989,36 @@ test('the whole &&/|| inside [[ ]] and (( )) context set resolves correctly', ()
   }
 });
 
+// --- Group 68 (defence round 6, Set V4) - AXIS: sibling value-form,
+// generalized to a RECURSIVE property (the third time this gate has
+// produced a finding). `isCommandPosition` opened a `[[` test whenever
+// the PREVIOUS word's SPELLING matched a preceder, regardless of
+// whether that word was itself quoted OR itself in command position -
+// `do`/`then`/etc as an ORDINARY ARGUMENT (`echo do [[ ... ]]`) is not
+// the keyword, the same way a quoted `[[` is not the keyword (V3
+// round 5's fix, same mechanism one token further left). Fixed by
+// giving every word token a `commandPos` flag computed at push time
+// (was I in a keyword-legal slot when I was pushed?), then requiring
+// BOTH `!quoted` AND `prev.commandPos` before a preceder can open a
+// test ---
+// ships-if-missing: `echo do [[ a > out.txt ]]` truncates `out.txt` for
+// real (`do` is just echo's plain argument, `[[` never opens a test)
+// but is reported NO_MATCH, because the phantom test swallows the
+// genuine `>` redirect. The DANGEROUS direction: a real destruction
+// goes silent, not a false alarm.
+test('the whole isCommandPosition quoting/position set resolves correctly', () => {
+  const cases = [
+    ['echo "do" [[ a > out.txt ]]', 'DESTRUCTION'],
+    ['echo do [[ a > out.txt ]]', 'DESTRUCTION'],
+    ['echo then [[ x > y ]]', 'DESTRUCTION'],
+    ['echo hi [[ x > y ]]', 'DESTRUCTION'],
+    ['if [[ -f a ]]; then rm b; fi', 'DESTRUCTION'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});
+
 test('no listed verb throws when invoked bare or with flags only', () => {
   for (const verb of EVERY_LISTED_VERB) {
     for (const cmd of [verb, `${verb} -f`, `${verb} --flag`]) {

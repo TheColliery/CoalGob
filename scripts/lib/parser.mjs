@@ -877,6 +877,20 @@ function analyzeMv(args) {
     // triggered by ARITY instead of a flag (Set X1, defence round 8).
     // Set Y2a: every source before the directory is its own at-risk
     // path, not just the last.
+    //
+    // DECLINED to extract a shared `mvFinding(dir, source)` helper for
+    // this and the -t branch above, despite the identical
+    // `posix.join(dir, posix.basename(source))` shape (rot-canary QUICK
+    // scan, defence round 8) - the same call this room already made for
+    // `skipSudoFlags`/`skipGitGlobalFlags` (defence round 3, rot-canary
+    // finding #7): two option grammars that happen to share a walk shape
+    // today. -t's DIRECTORY is user-declared and its whole positional
+    // list is sources; this branch's DIRECTORY is inferred from arity
+    // and excludes itself from the source list - one already differs
+    // from the other in what counts as `dir` vs `source`, and a shared
+    // helper would couple two computations that can diverge independently
+    // as either branch's own grammar grows. Left as two sites on purpose;
+    // do not re-raise without a THIRD site forcing the question.
     const directory = positional[positional.length - 1];
     const sources = positional.slice(0, -1);
     return {
@@ -1105,6 +1119,16 @@ function isValueTakingFlag(verbLower, value) {
   return verbLower === 'truncate' && (value === '--size' || TRUNCATE_BARE_S_CLUSTER_RE.test(value));
 }
 
+// ponytail: 56 lines at declaration (defence round 8, Set Y1 - the
+// ALL-OUTPUTS re-check's target-collection rewrite grew this past the
+// 50-line function-length signal). The collection loop, the no-op/
+// grow-safe exemptions, and the final targets-to-findings map all read
+// and narrow the SAME `targets` array end-to-end - splitting any one
+// piece out would hand a caller half this verb's own decision and the
+// rest back, the same cohesion argument `analyzeMv`'s own declaration
+// makes for its own branches. Extraction, if ever warranted, rides the
+// same future unit as the file-header's own deferred split - not done
+// piecemeal here.
 function analyzeDestructionVerb(verbLower, args, precededByPipe) {
   let endOptions = false;
   let sawNoOpFlag = false;

@@ -1,7 +1,7 @@
 {
   "name": "coalgob",
   "version": "0.1.0-beta.1",
-  "description": "CoalGob — makes an agent's destruction as recoverable as a user's, by rerouting destructive filesystem commands through the OS's own trash mechanism instead of letting them run as written, and failing closed where no trash mechanism exists. Concept stage: nothing is built or shipped yet.",
+  "description": "CoalGob — checks every destructive command an agent runs, per operation, for whether it already lands somewhere recoverable (the OS's own trash, or a destroyer that already snapshotted it), and only blocks it when it would not, handing back the recoverable form of the same destruction. Concept stage: nothing is built or shipped yet.",
   "author": {
     "name": "HetCreep"
   },

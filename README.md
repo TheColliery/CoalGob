@@ -19,13 +19,18 @@ what it does today.
 
 ## What it will do
 
-Make an agent's destruction as recoverable as a user's, by rerouting destructive filesystem commands
-through the operating system's own trash mechanism instead of letting them run as written — and
-failing closed where no trash mechanism exists, rather than falling back to a real delete.
+> CoalGob checks every destructive command an agent runs, per operation, for whether it already
+> lands somewhere recoverable — the OS's own trash, or a destroyer that already snapshotted it — and
+> only blocks it when it would not, handing back the recoverable form of the same destruction rather
+> than leaving the agent to retry blind or reach for an unmonitored verb.
+
+CoalGob adds no new protection. It removes the routing that lets an agent's delete skip the net every
+OS already ships for a user — and where no net can be constructed at all, it says so instead of
+quietly landing the agent below the user's own baseline.
 
 An agent is not more reckless than a user with a mouse; it is structurally routed around the safety
 net a user gets for free (`rm`, `unlink`, `Remove-Item`, `shutil.rmtree` all bypass the Recycle Bin /
-Trash by default). CoalGob removes that asymmetry rather than adding a new protection.
+Trash by default).
 
 ## Status
 

@@ -8,3 +8,21 @@ All notable changes to CoalGob are documented here. Format follows [Keep a Chang
 
 - Repo founded — org #8 of the TheColliery series, concept stage. License, NOTICE, and plugin
   manifest only; no hooks, skills, or interception code yet.
+
+**Deliberately absent, each owed at a stated trigger:**
+
+- `hooks/`, `skills/`, `agents/`, `commands/`, interception code — no hook or skill surface exists
+  yet; owed once the mechanism is built.
+- `scripts/` (`build-plugin`/`verify`/`test`) — would gate an empty repo; owed once there is source
+  to build and verify.
+- `plugin/` dist, `.claude-plugin/marketplace.json` — no source to build, and a manifest whose only
+  load-bearing field (`plugins[0].source`) points at a dist that does not exist ships a lie; owed
+  together, with the first build.
+- `platform-configs/` — no hook reads config yet; owed with the first hook.
+- `.github/` (CI, CodeQL, Scorecard, dependabot, issue templates) — no remote; these produce no
+  signal against zero code; owed at first push.
+- `SECURITY.md`, `PRIVACY.md`, `CONTRIBUTING.md` — would describe a product that does not exist yet;
+  owed at first push.
+- `.githooks/` — `.gitattributes`' LF rule anticipates this dir (kept byte-identical to the sibling
+  repos on purpose — "one flock, one color" costs less than a hand-trimmed variant) but it is inert
+  until the dir exists; owed if/when local git hooks are added.

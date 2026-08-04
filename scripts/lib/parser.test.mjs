@@ -141,7 +141,13 @@ test('mv -t DIR src is a conditional destruction with the -t target', () => {
 });
 
 test('mv with an unparseable arg shape is OUT_OF_SCOPE, not a crash and not NONE', () => {
-  assert.equal(verdictOf('mv'), 'OUT_OF_SCOPE');
+  // Defence round 5, Set U8: bare `mv` (no operands at all) moved to
+  // NO_MATCH - it is a no-op, the same class as `mv --help` (see 'the
+  // whole mv no-op set resolves correctly'), not an unparseable shape.
+  // `mv a` (one operand, not enough to do anything, not a recognized
+  // no-op spelling) keeps the genuine unparseable-shape coverage this
+  // test exists for.
+  assert.equal(verdictOf('mv a'), 'OUT_OF_SCOPE');
 });
 
 // --- Group 7: truncation with no command name to match ---
@@ -831,7 +837,13 @@ test('the secondary-candidate admission past an unresolved prefix chain is unjud
 });
 
 test('an mv shape the parser cannot resolve is unjudged', () => {
-  assert.equal(kindOf('mv'), 'unjudged');
+  // Defence round 5, Set U8: a BARE `mv` (no operands at all) is a
+  // no-op, the same class as `mv --help` - it moved to NO_MATCH and no
+  // longer belongs here (see 'the whole mv no-op set resolves
+  // correctly'). `mv a` (one operand, still not enough to do anything,
+  // and not a recognized no-op spelling) keeps the genuine
+  // can't-resolve coverage this test exists for.
+  assert.equal(kindOf('mv a'), 'unjudged');
 });
 
 test('a tokenizer error (unterminated quote) is unjudged', () => {
@@ -1973,6 +1985,54 @@ test('the whole cp null-sink-source set resolves correctly', () => {
     ['cp -v -f /dev/null f', 'OUT_OF_SCOPE'],
     ['cp a b', 'NO_MATCH'],
     ['cp -f a b', 'NO_MATCH'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});
+
+// --- Group 63 (defence round 5, Set U8, part 1) - a prefix chain that
+// consumes every word (`exec` with nothing after it) must not drop a
+// PENDING unjudged redirect admission. `analyzeSegment` computes
+// `fdOutOfScope` before verb resolution; `resolveVerb` returning null
+// (the prefix consumed everything) fell straight to a silent NO_MATCH,
+// discarding a construct the parser had already decided it could not
+// judge. Compare `01> f`, which correctly reports OUT_OF_SCOPE - this
+// is the same admission, just reached through a prefix instead of
+// directly ---
+// ships-if-missing: `exec 3> f` truncates `f` for real (a non-stdout
+// fd, `exec` alone with a redirect applies it to the whole shell) while
+// this parser reports NO_MATCH - a real in-scope truncation reported as
+// silence.
+test('a prefix chain consuming every word still reports its pending unjudged redirect', () => {
+  assert.equal(verdictOf('exec 3> f'), 'OUT_OF_SCOPE');
+});
+
+test('01> f is still OUT_OF_SCOPE, unaffected by the exec fix (control)', () => {
+  assert.equal(verdictOf('01> f'), 'OUT_OF_SCOPE');
+});
+
+test('exec rm -rf build is still a destruction, unaffected by the exec fix (control)', () => {
+  assert.equal(verdictOf('exec rm -rf build'), 'DESTRUCTION');
+});
+
+// --- Group 64 (defence round 5, Set U8, part 2) - `mv`'s own no-op
+// exemptions never reached `analyzeMv` - the GNU `--help`/`--version`
+// no-op rule `isNoOpFlag` already applies to rm/truncate/del (mv is a
+// GNU coreutils tool too, not a new claim), and a bare invocation (no
+// operands at all) touches nothing, the same "no positional argument"
+// exemption class `analyzeDestructionVerb` already grants. Both fell
+// through to the generic "argument shape not recognized" `unjudged`
+// admission instead - inflating the room's own ceiling metric with
+// commands the parser reads perfectly (the Group K class again) ---
+// ships-if-missing: `mv --help` destroys nothing yet fires the remedy
+// and counts against `unjudged`.
+test('the whole mv no-op set resolves correctly', () => {
+  const cases = [
+    ['mv --help', 'NO_MATCH'],
+    ['mv --version', 'NO_MATCH'],
+    ['mv', 'NO_MATCH'],
+    ['mv a b', 'DESTRUCTION'],
   ];
   for (const [cmd, expected] of cases) {
     assert.equal(verdictOf(cmd), expected, cmd);

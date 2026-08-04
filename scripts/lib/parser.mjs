@@ -599,6 +599,18 @@ function lastMvOverride(args) {
 }
 
 function analyzeMv(args) {
+  // A bare invocation (no operands at all) touches nothing - the same
+  // "no positional argument" exemption class analyzeDestructionVerb
+  // already grants rm/truncate/del, applied here for mv's own missing-
+  // operand usage error. `--help`/`--version` reuse the SAME GNU no-op
+  // rule isNoOpFlag already applies to those verbs - mv is a GNU
+  // coreutils tool too, not a new claim. Both previously fell through to
+  // the generic "argument shape not recognized" `unjudged` admission,
+  // inflating the room's own ceiling metric with commands this parser
+  // reads perfectly (the Group K class again).
+  if (args.length === 0 || args.some((w) => isNoOpFlag('mv', w.value))) {
+    return { verdict: 'NO_MATCH' };
+  }
   if (lastMvOverride(args) === 'n') {
     // -n winning (by argument order, across every spelling and cluster)
     // guarantees mv never overwrites an existing target - the one mv
@@ -1071,7 +1083,14 @@ function analyzeSegment(tokens) {
   }
 
   const resolved = resolveVerb(words);
-  if (!resolved) return { verdict: 'NO_MATCH' };
+  if (!resolved) {
+    // The prefix chain consumed every word (`exec` with nothing after
+    // it) - a PENDING unjudged admission (heredoc/fd-redirect) must
+    // still surface here, the same way it does everywhere else in this
+    // function. Falling straight to NO_MATCH silently dropped a
+    // construct the parser had already decided it could not judge.
+    return unjudgedConstruct(heredoc, fdOutOfScope) || { verdict: 'NO_MATCH' };
+  }
 
   if (!resolved.consumedPrefix) {
     // word 0 is already the candidate - no ambiguity, no walk needed.

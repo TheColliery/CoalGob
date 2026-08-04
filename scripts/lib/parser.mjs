@@ -162,6 +162,24 @@ function walkCandidates(words, startIdx) {
   return out;
 }
 
+// Value-taking git global SHORT flags (`--git-dir=path` is one self-
+// contained joined token and needs no table, same as sudo's long flags).
+const GIT_GLOBAL_VALUE_FLAGS = new Set(['-C', '-c']);
+
+// OPTIMIZATION mirroring skipSudoFlags: sharpens which token is the git
+// SUBCOMMAND when a global flag precedes it. An unrecognized flag still
+// defaults to boolean-skip-alone (the same safe default sudo's table uses).
+function skipGitGlobalFlags(args) {
+  let i = 0;
+  while (i < args.length) {
+    const w = args[i].value;
+    if (GIT_GLOBAL_VALUE_FLAGS.has(w)) { i += 2; continue; }
+    if (isFlagShaped(w)) { i += 1; continue; }
+    break;
+  }
+  return i;
+}
+
 const WRAPPER_SCRIPT_VERBS = new Set(['bash', 'sh', 'zsh', 'ksh', 'dash', 'source', '.']);
 const POSIX_INTERPRETER_VERBS = new Set(['node', 'python', 'python3', 'perl', 'ruby']);
 const POSIX_ONE_LINER_FLAGS = new Set(['-e', '-c']);
@@ -464,23 +482,39 @@ function analyzeMv(args) {
 
 // --- a listed destruction verb (rm/rmdir/unlink/truncate/del/Remove-Item) --
 
+// PowerShell allows an unambiguous prefix abbreviation of a parameter name,
+// and an explicit-value form (`-WhatIf:$true`/`:$false`). `-wha`/4 chars is
+// the shortest abbreviation this room has a named example for; anything
+// shorter is too ambiguous to resolve as this one switch.
+function isRemoveItemWhatIf(value) {
+  const base = value.toLowerCase().split(':')[0];
+  return base.length >= 4 && base.startsWith('-') && '-whatif'.startsWith(base);
+}
+
 // A dry-run/help flag that means "destroys nothing", scoped to the one verb
 // each spelling actually belongs to - a Windows-only or PowerShell-only
 // switch has no meaning for the other listed verbs.
 function isNoOpFlag(verbLower, value) {
   if (value === '--help' || value === '--version') return true;
   if (verbLower === 'del' && value === '/?') return true;
-  if (verbLower === 'remove-item' && value.toLowerCase() === '-whatif') return true;
+  if (verbLower === 'remove-item' && isRemoveItemWhatIf(value)) return true;
   return false;
 }
 
+// GNU getopt semantics: when an option repeats, the LAST occurrence wins,
+// regardless of which spelling (-s, --size, --size=, or the joined short
+// form -s+10) each repetition used - so this walks args once in order and
+// keeps overwriting, rather than checking each spelling in priority order.
 function truncateGrowSize(args) {
-  const shortIdx = args.findIndex((w) => w.value === '-s');
-  if (shortIdx !== -1) return args[shortIdx + 1]?.value;
-  const longIdx = args.findIndex((w) => w.value === '--size');
-  if (longIdx !== -1) return args[longIdx + 1]?.value;
-  const joined = args.find((w) => w.value.startsWith('--size='));
-  return joined ? joined.value.slice('--size='.length) : undefined;
+  let size;
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i].value;
+    if (w === '-s' || w === '--size') { size = args[i + 1]?.value; continue; }
+    if (w.startsWith('--size=')) { size = w.slice('--size='.length); continue; }
+    const joinedShort = /^-s(.+)$/.exec(w);
+    if (joinedShort) { size = joinedShort[1]; continue; }
+  }
+  return size;
 }
 
 function analyzeDestructionVerb(verbLower, args) {
@@ -556,14 +590,21 @@ function classifyVerb(verb, verbLower, args, heredoc, fdOutOfScope) {
   if (verbLower === 'find' && args.some((w) => w.value === '-exec' || w.value === '-delete' || w.value === '-execdir')) {
     return { verdict: 'OUT_OF_SCOPE', reason: 'find can delete directly or run an arbitrary destructive verb', kind: KIND_DECLARED };
   }
-  if (verbLower === 'git' && GIT_DESTRUCTIVE_SUBCOMMANDS.has(args[0]?.value)) {
-    return { verdict: 'OUT_OF_SCOPE', reason: `git ${args[0].value} is a direct destroyer this parser does not route`, kind: KIND_UNROUTED };
-  }
-  if (verbLower === 'git' && args[0]?.value === 'reset' && args.some((w) => w.value === '--hard')) {
-    // A bare `git reset` (soft/mixed, the default) never touches the
-    // working tree - only --hard overwrites tracked files, so the flag
-    // gate is load-bearing, not an approximation.
-    return { verdict: 'OUT_OF_SCOPE', reason: 'git reset --hard is a direct destroyer this parser does not route', kind: KIND_UNROUTED };
+  if (verbLower === 'git') {
+    // A global flag before the subcommand (`-C <path>`, `--git-dir=<path>`)
+    // must not defeat routing - skip it the same way skipSudoFlags does for
+    // sudo, so args[0] is never wrongly assumed to be the subcommand.
+    const subIdx = skipGitGlobalFlags(args);
+    const sub = args[subIdx]?.value;
+    if (GIT_DESTRUCTIVE_SUBCOMMANDS.has(sub)) {
+      return { verdict: 'OUT_OF_SCOPE', reason: `git ${sub} is a direct destroyer this parser does not route`, kind: KIND_UNROUTED };
+    }
+    if (sub === 'reset' && args.slice(subIdx).some((w) => w.value === '--hard')) {
+      // A bare `git reset` (soft/mixed, the default) never touches the
+      // working tree - only --hard overwrites tracked files, so the flag
+      // gate is load-bearing, not an approximation.
+      return { verdict: 'OUT_OF_SCOPE', reason: 'git reset --hard is a direct destroyer this parser does not route', kind: KIND_UNROUTED };
+    }
   }
   if (verbLower === 'npx' && args[0]?.value === 'rimraf') {
     return { verdict: 'OUT_OF_SCOPE', reason: 'npx rimraf is a direct destroyer this parser does not route', kind: KIND_UNROUTED };

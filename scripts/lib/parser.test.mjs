@@ -1171,3 +1171,61 @@ test('exec is a transparent prefix, same class as nohup/setsid', () => {
 test('do as an ordinary argument (not word 0) is untouched (control)', () => {
   assert.equal(verdictOf('echo do rm x'), 'NO_MATCH');
 });
+
+// --- Group 40 (defence round 2, Group I) - option-parsing fidelity ---
+
+// I1 - truncate: the LAST -s/--size wins (GNU getopt semantics), not the
+// first; and the joined short form -s+10 is a legal grow spelling.
+test('truncate -s +10 -s 0 (repeated -s, last wins) is a real shrink, a destruction', () => {
+  assert.equal(verdictOf('truncate -s +10 -s 0 file'), 'DESTRUCTION');
+});
+
+test('truncate -s+10 (joined short form, explicit grow) is not a destruction', () => {
+  assert.equal(verdictOf('truncate -s+10 file'), 'NO_MATCH');
+});
+
+test('truncate --size=+10 (joined long form) still exempts (regression control)', () => {
+  assert.equal(verdictOf('truncate --size=+10 growing.log'), 'NO_MATCH');
+});
+
+test('truncate -s 0 (plain shrink, no repeat) is still a destruction (control)', () => {
+  assert.equal(verdictOf('truncate -s 0 file'), 'DESTRUCTION');
+});
+
+// I2 - git: a global flag before the subcommand must not defeat the
+// parser's own routing for that subcommand.
+test('git -C <path> clean still routes through the subcommand check', () => {
+  assert.equal(verdictOf('git -C /repo clean -fdx'), 'OUT_OF_SCOPE');
+  assert.equal(kindOf('git -C /repo clean -fdx'), 'unrouted');
+});
+
+test('git --git-dir=<path> reset --hard still routes through the subcommand check', () => {
+  assert.equal(verdictOf('git --git-dir=.git reset --hard'), 'OUT_OF_SCOPE');
+  assert.equal(kindOf('git --git-dir=.git reset --hard'), 'unrouted');
+});
+
+test('bare git reset (no --hard, no global flag) still stays NO_MATCH (control)', () => {
+  assert.equal(verdictOf('git reset'), 'NO_MATCH');
+});
+
+test('bare git clean (no global flag) still routes (control)', () => {
+  assert.equal(verdictOf('git clean -fdx'), 'OUT_OF_SCOPE');
+});
+
+// I3 - Remove-Item -WhatIf: the explicit-value switch form and unambiguous
+// abbreviations are the same dry-run switch.
+test('Remove-Item -WhatIf:$true is still the dry-run switch', () => {
+  assert.equal(verdictOf('Remove-Item -WhatIf:$true x'), 'NO_MATCH');
+});
+
+test('Remove-Item -Wha (unambiguous abbreviation) is still the dry-run switch', () => {
+  assert.equal(verdictOf('Remove-Item -Wha x'), 'NO_MATCH');
+});
+
+test('Remove-Item -Whati (unambiguous abbreviation) is still the dry-run switch', () => {
+  assert.equal(verdictOf('Remove-Item -Whati x'), 'NO_MATCH');
+});
+
+test('Remove-Item -W alone (too ambiguous to resolve) is not exempted (control)', () => {
+  assert.equal(verdictOf('Remove-Item -W x'), 'DESTRUCTION');
+});

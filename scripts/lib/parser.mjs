@@ -608,19 +608,26 @@ function tokenize(input) {
 
 // --- segmentation ----------------------------------------------------------
 
+// Each segment carries whether it was reached via a `|` PIPE specifically
+// (never `||`, `;`, `&&`, `&`, or a newline) - AXIS 6 (invocation
+// channel, Set W6 defence round 7): PowerShell's Remove-Item binds its
+// `-Path` parameter FROM the pipeline, a real binding mechanism this
+// parser must be able to see past the per-segment split.
 function splitSegments(tokens) {
   const segments = [];
   let current = [];
+  let precededByPipe = false;
   for (const t of tokens) {
     if (t.type === 'op' && SEGMENT_SEPARATORS.has(t.value)) {
-      segments.push(current);
+      segments.push({ tokens: current, precededByPipe });
       current = [];
+      precededByPipe = t.value === '|';
     } else {
       current.push(t);
     }
   }
-  segments.push(current);
-  return segments.filter((seg) => seg.length > 0);
+  segments.push({ tokens: current, precededByPipe });
+  return segments.filter((seg) => seg.tokens.length > 0);
 }
 
 // --- redirect classification -----------------------------------------------
@@ -997,7 +1004,7 @@ function isValueTakingFlag(verbLower, value) {
   return verbLower === 'truncate' && (value === '--size' || TRUNCATE_BARE_S_CLUSTER_RE.test(value));
 }
 
-function analyzeDestructionVerb(verbLower, args) {
+function analyzeDestructionVerb(verbLower, args, precededByPipe) {
   let endOptions = false;
   let sawNoOpFlag = false;
   let hasPositional = false;
@@ -1024,6 +1031,17 @@ function analyzeDestructionVerb(verbLower, args) {
     }
   }
   if (!hasPositional) {
+    // AXIS 6 (invocation channel, Set W6 defence round 7): Remove-Item's
+    // -Path parameter binds FROM THE PIPELINE, PowerShell's own
+    // documented binding model - "no positional operand" is not "no
+    // operand" for the one verb here that is a real PowerShell cmdlet.
+    // Scoped to remove-item only: POSIX verbs (rm/rmdir/unlink/
+    // truncate/del) read argv, not stdin, so a POSIX `cmd | rm` does
+    // not feed rm an operand this way and this exemption must not
+    // apply to them.
+    if (verbLower === 'remove-item' && precededByPipe) {
+      return { verdict: 'DESTRUCTION', verb: verbLower, conditional: true };
+    }
     // No operand at all - nothing for this verb to destroy. Known
     // imprecision, accepted: a flag's own VALUE (e.g. truncate's `-s 0`)
     // also counts as positional here, since it does not start with `-`;
@@ -1059,9 +1077,9 @@ function unjudgedConstruct(heredoc, fdOutOfScope) {
 // function-length signal, grown by F/L/S2's OUT_OF_SCOPE-admission
 // additions. Same deferral as the file-header declaration - a lookup-
 // table extraction is future work, not this round's.
-function classifyVerb(verb, verbLower, args, heredoc, fdOutOfScope) {
+function classifyVerb(verb, verbLower, args, heredoc, fdOutOfScope, precededByPipe) {
   if (DESTRUCTION_VERBS.has(verbLower)) {
-    const result = analyzeDestructionVerb(verbLower, args);
+    const result = analyzeDestructionVerb(verbLower, args, precededByPipe);
     // A NO_MATCH exemption (--help, an explicit grow) must not silently
     // discard a real fd redirect sitting alongside it - fall through to the
     // same unjudged-construct check every other verb gets.
@@ -1190,6 +1208,14 @@ function classifyVerb(verb, verbLower, args, heredoc, fdOutOfScope) {
 // this parser's own declared scope onto ordinary `sc query`/`sc start`.
 const POWERSHELL_VERB_ALIASES = {
   ri: 'remove-item',
+  // Get-Alias -Definition Clear-Content -> clc, its only alias (Set W6,
+  // defence round 7 - the audit's own T3 row: the alias MECHANISM below
+  // already resolves every verb candidate universally before any name
+  // check, so this is purely a missing table entry, not a missing code
+  // path). Set-Content's own alias (`sc`) stays excluded, per this
+  // table's own header comment above - `sc` collides with sc.exe, the
+  // Windows Service Controller.
+  clc: 'clear-content',
   // Get-Alias -Definition Move-Item -> mi, move, mv. `mi` resolves to
   // move-item's OWN semantics below (NOT mv's - Move-Item requires
   // -Force to overwrite, VERIFIED empirically on this host's PowerShell
@@ -1225,7 +1251,7 @@ function isSecondaryCandidateNamedVerb(words, idx) {
 
 // ponytail: 92 lines at declaration (defence round 3) - over the 50-line
 // function-length signal. Same deferral as the file-header declaration.
-function analyzeSegment(tokens) {
+function analyzeSegment(tokens, precededByPipe) {
   let heredoc = false;
   const words = [];
   const redirects = [];
@@ -1292,7 +1318,7 @@ function analyzeSegment(tokens) {
     // word 0 is already the candidate - no ambiguity, no walk needed.
     const { base, baseLower } = verbAt(words, resolved.index);
     const args = words.slice(resolved.index + 1);
-    return classifyVerb(base, baseLower, args, heredoc, fdOutOfScope);
+    return classifyVerb(base, baseLower, args, heredoc, fdOutOfScope, precededByPipe);
   }
 
   // A prefix chain was consumed. Per-tool flag knowledge, where it exists
@@ -1308,7 +1334,7 @@ function analyzeSegment(tokens) {
   const [primaryIdx, ...secondaryIdx] = candidates;
   const { base: primaryVerb, baseLower: primaryVerbLower } = verbAt(words, primaryIdx);
   const primaryArgs = words.slice(primaryIdx + 1);
-  const primaryResult = classifyVerb(primaryVerb, primaryVerbLower, primaryArgs, heredoc, fdOutOfScope);
+  const primaryResult = classifyVerb(primaryVerb, primaryVerbLower, primaryArgs, heredoc, fdOutOfScope, precededByPipe);
   if (primaryResult.verdict !== 'NO_MATCH') return primaryResult;
 
   // The walk keeps looking rather than returning: a mis-identified
@@ -1339,7 +1365,9 @@ export function parseCommand(input) {
   }
 
   const segments = splitSegments(tokens);
-  const results = segments.map(analyzeSegment).filter((r) => r.verdict !== 'NO_MATCH');
+  const results = segments
+    .map((seg) => analyzeSegment(seg.tokens, seg.precededByPipe))
+    .filter((r) => r.verdict !== 'NO_MATCH');
 
   const destructions = results.filter((r) => r.verdict === 'DESTRUCTION');
   if (destructions.length > 0) return { verdict: 'DESTRUCTION', findings: destructions };

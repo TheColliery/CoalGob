@@ -2378,6 +2378,53 @@ test('the whole .cmd/.bat script-vs-executable set resolves correctly', () => {
   }
 });
 
+// --- Group 75 (defence round 7, Set W6, part 1) - AXIS 6 (invocation
+// channel - PowerShell's OWN documented binding model: a parameter can
+// bind "ValueFromPipeline", not only positionally or by name). The
+// `!hasPositional -> NO_MATCH` exemption is sound for POSIX verbs (a
+// bare `rm -rf` really is a usage error touching nothing) and unsound
+// for `Remove-Item`, whose `-Path` parameter binds from a pipeline
+// stage - the single most common way an agent deletes a file set in
+// PowerShell. Scoped to `remove-item` only (the one verb with real
+// pipeline-binding cited/tested here) - POSIX verbs read argv, not
+// stdin, so a POSIX `cmd | rm` genuinely does not feed rm an operand
+// this way, and this fix does not touch them ---
+// ships-if-missing: `Get-ChildItem *.log | Remove-Item -Force` deletes
+// every matched file for real (the pipeline supplies -Path) while this
+// parser reports NO_MATCH, because every token in the `Remove-Item`
+// segment is flag-shaped and the exemption sees "no operand".
+test('the whole Remove-Item pipeline-binding set resolves correctly', () => {
+  const cases = [
+    ['Get-ChildItem *.log | Remove-Item -Force', 'DESTRUCTION'],
+    ['Get-ChildItem | Remove-Item -Recurse -Force', 'DESTRUCTION'],
+    ['Remove-Item -Force', 'NO_MATCH'],
+    ['ls | echo', 'NO_MATCH'],
+    ['rm -rf build', 'DESTRUCTION'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});
+
+// --- Group 76 (defence round 7, Set W6, part 2) - AXES 1 (spelling)
+// and 7 (site - the audit's own T3 row: the alias mechanism was never
+// applied to name-routed verbs). CITED SOURCE: `Get-Alias -Definition
+// Clear-Content` and `Get-Alias -Definition Set-Content`, BOTH RUN
+// live on this host this round (not just the one reported alias) -
+// `clc -> Clear-Content` is Clear-Content's only alias; `sc ->
+// Set-Content` is Set-Content's only alias and stays EXCLUDED, already
+// documented (collides with sc.exe, the Windows Service Controller).
+// `verbAt`'s own alias-resolution already runs universally for every
+// verb candidate before any name check - the gap was purely a missing
+// TABLE ENTRY, not a missing code path, confirmed by adding exactly
+// one line and nothing else ---
+// ships-if-missing: `clc notes.txt` empties `notes.txt` for real
+// (Clear-Content's own alias) while this parser reports NO_MATCH.
+test('clc (Clear-Content alias) resolves through the same alias mechanism as ri/mi', () => {
+  assert.equal(verdictOf('clc notes.txt'), 'OUT_OF_SCOPE');
+  assert.equal(verdictOf('Clear-Content notes.txt'), 'OUT_OF_SCOPE');
+});
+
 test('no listed verb throws when invoked bare or with flags only', () => {
   for (const verb of EVERY_LISTED_VERB) {
     for (const cmd of [verb, `${verb} -f`, `${verb} --flag`]) {

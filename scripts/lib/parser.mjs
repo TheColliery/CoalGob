@@ -54,6 +54,22 @@
 
 const SEGMENT_SEPARATORS = new Set([';', '&&', '||', '|', '&', '\n']);
 
+// Partition of every OUT_OF_SCOPE site, set explicitly at each return - never
+// re-derived from the `reason` prose (a prose grouping mis-files the next
+// reason string somebody adds, silently). 'declared' = the owner's own scope
+// boundary working as designed (wrappers: make/xargs/find/npm run/interpreter
+// one-liners/cmd.exe/script files). 'unrouted' = a named direct destroyer
+// this room knowingly does not route. 'unjudged' = the parser could not read
+// the construct at all (heredoc, subshell, a redirect it cannot classify,
+// an unresolved prefix chain, a tokenizer error) - the ceiling metric for
+// whether this guard is degrading into a shrug. `:575`'s non-string-input
+// admission carries NO kind: no shell was parsed, so it is a caller contract
+// violation, not a command-construct judgment, and does not belong in this
+// partition at all.
+const KIND_DECLARED = 'declared';
+const KIND_UNROUTED = 'unrouted';
+const KIND_UNJUDGED = 'unjudged';
+
 const DESTRUCTION_VERBS = new Set([
   'rm', 'rmdir', 'unlink', 'truncate', 'del', 'remove-item',
 ]);
@@ -380,7 +396,7 @@ function analyzeMv(args) {
     };
   }
 
-  return { verdict: 'OUT_OF_SCOPE', reason: 'mv argument shape not recognized' };
+  return { verdict: 'OUT_OF_SCOPE', reason: 'mv argument shape not recognized', kind: KIND_UNJUDGED };
 }
 
 // --- a listed destruction verb (rm/rmdir/unlink/truncate/del/Remove-Item) --
@@ -421,50 +437,50 @@ function classifyVerb(verb, verbLower, args, heredoc, fdOutOfScope) {
     return analyzeMv(args);
   }
 
-  if (heredoc) return { verdict: 'OUT_OF_SCOPE', reason: 'heredoc present' };
-  if (fdOutOfScope) return { verdict: 'OUT_OF_SCOPE', reason: `redirect ${fdOutOfScope.op} not judged` };
+  if (heredoc) return { verdict: 'OUT_OF_SCOPE', reason: 'heredoc present', kind: KIND_UNJUDGED };
+  if (fdOutOfScope) return { verdict: 'OUT_OF_SCOPE', reason: `redirect ${fdOutOfScope.op} not judged`, kind: KIND_UNJUDGED };
 
   if (NAMED_DESTROYER_VERBS.has(verbLower)) {
-    return { verdict: 'OUT_OF_SCOPE', reason: `${verbLower} is a direct destroyer this parser does not route` };
+    return { verdict: 'OUT_OF_SCOPE', reason: `${verbLower} is a direct destroyer this parser does not route`, kind: KIND_UNROUTED };
   }
   if (verbLower === 'make') {
-    return { verdict: 'OUT_OF_SCOPE', reason: 'make target may run arbitrary destructive rules' };
+    return { verdict: 'OUT_OF_SCOPE', reason: 'make target may run arbitrary destructive rules', kind: KIND_DECLARED };
   }
   if (verbLower === 'xargs') {
-    return { verdict: 'OUT_OF_SCOPE', reason: 'xargs may invoke a destructive verb per input line' };
+    return { verdict: 'OUT_OF_SCOPE', reason: 'xargs may invoke a destructive verb per input line', kind: KIND_DECLARED };
   }
   if (verbLower === 'find' && args.some((w) => w.value === '-exec' || w.value === '-delete' || w.value === '-execdir')) {
-    return { verdict: 'OUT_OF_SCOPE', reason: 'find can delete directly or run an arbitrary destructive verb' };
+    return { verdict: 'OUT_OF_SCOPE', reason: 'find can delete directly or run an arbitrary destructive verb', kind: KIND_DECLARED };
   }
   if (verbLower === 'git' && GIT_DESTRUCTIVE_SUBCOMMANDS.has(args[0]?.value)) {
-    return { verdict: 'OUT_OF_SCOPE', reason: `git ${args[0].value} is a direct destroyer this parser does not route` };
+    return { verdict: 'OUT_OF_SCOPE', reason: `git ${args[0].value} is a direct destroyer this parser does not route`, kind: KIND_UNROUTED };
   }
   if (verbLower === 'npx' && args[0]?.value === 'rimraf') {
-    return { verdict: 'OUT_OF_SCOPE', reason: 'npx rimraf is a direct destroyer this parser does not route' };
+    return { verdict: 'OUT_OF_SCOPE', reason: 'npx rimraf is a direct destroyer this parser does not route', kind: KIND_UNROUTED };
   }
   if (PKG_MANAGERS.has(verbLower)) {
     const sub = args[0]?.value;
     if (sub === 'run' || sub === 'ci') {
-      return { verdict: 'OUT_OF_SCOPE', reason: `${verbLower} ${sub} executes an arbitrary/destructive package script` };
+      return { verdict: 'OUT_OF_SCOPE', reason: `${verbLower} ${sub} executes an arbitrary/destructive package script`, kind: KIND_DECLARED };
     }
     if (sub === 'exec' && args[1]?.value === 'rimraf') {
-      return { verdict: 'OUT_OF_SCOPE', reason: `${verbLower} exec rimraf is a direct destroyer this parser does not route` };
+      return { verdict: 'OUT_OF_SCOPE', reason: `${verbLower} exec rimraf is a direct destroyer this parser does not route`, kind: KIND_UNROUTED };
     }
   }
   if (POSIX_INTERPRETER_VERBS.has(verbLower) && args.some((w) => POSIX_ONE_LINER_FLAGS.has(w.value))) {
-    return { verdict: 'OUT_OF_SCOPE', reason: `${verbLower} one-liner may run arbitrary code` };
+    return { verdict: 'OUT_OF_SCOPE', reason: `${verbLower} one-liner may run arbitrary code`, kind: KIND_DECLARED };
   }
   if (WINDOWS_ONE_LINER_VERBS.has(verbLower) && args.some((w) => /^-c/i.test(w.value))) {
-    return { verdict: 'OUT_OF_SCOPE', reason: `${verbLower} one-liner may run arbitrary code` };
+    return { verdict: 'OUT_OF_SCOPE', reason: `${verbLower} one-liner may run arbitrary code`, kind: KIND_DECLARED };
   }
   if (verbLower === 'cmd' && args.some((w) => w.value.toLowerCase() === '/c')) {
-    return { verdict: 'OUT_OF_SCOPE', reason: 'cmd /c may run arbitrary code' };
+    return { verdict: 'OUT_OF_SCOPE', reason: 'cmd /c may run arbitrary code', kind: KIND_DECLARED };
   }
   if (WRAPPER_SCRIPT_VERBS.has(verbLower)) {
-    return { verdict: 'OUT_OF_SCOPE', reason: 'script file invocation not inspected' };
+    return { verdict: 'OUT_OF_SCOPE', reason: 'script file invocation not inspected', kind: KIND_DECLARED };
   }
   if (SCRIPT_EXTENSION.test(verb)) {
-    return { verdict: 'OUT_OF_SCOPE', reason: 'script file invocation not inspected' };
+    return { verdict: 'OUT_OF_SCOPE', reason: 'script file invocation not inspected', kind: KIND_DECLARED };
   }
 
   return { verdict: 'NO_MATCH' };
@@ -501,7 +517,7 @@ function analyzeSegment(tokens) {
       if (t.value === '<' || t.fdDup) continue;
       const target = tokens[idx + 1];
       if (!target || target.type !== 'word') {
-        return { verdict: 'OUT_OF_SCOPE', reason: `redirect ${t.value} has no target` };
+        return { verdict: 'OUT_OF_SCOPE', reason: `redirect ${t.value} has no target`, kind: KIND_UNJUDGED };
       }
       redirects.push({ op: t.value, target: target.value });
       idx++;
@@ -518,13 +534,13 @@ function analyzeSegment(tokens) {
   const fdOutOfScope = classified.find((r) => r.kind === 'fd-out-of-scope');
 
   if (words.length === 0) {
-    if (fdOutOfScope) return { verdict: 'OUT_OF_SCOPE', reason: `redirect ${fdOutOfScope.op} not judged` };
+    if (fdOutOfScope) return { verdict: 'OUT_OF_SCOPE', reason: `redirect ${fdOutOfScope.op} not judged`, kind: KIND_UNJUDGED };
     return { verdict: 'NO_MATCH' };
   }
 
   const first = words[0].value;
   if (first === '{' || first.startsWith('(') || first.startsWith('$(') || first.startsWith('`')) {
-    return { verdict: 'OUT_OF_SCOPE', reason: 'subshell/group/command-substitution not inspected' };
+    return { verdict: 'OUT_OF_SCOPE', reason: 'subshell/group/command-substitution not inspected', kind: KIND_UNJUDGED };
   }
 
   const resolved = resolveVerb(words);
@@ -562,7 +578,7 @@ function analyzeSegment(tokens) {
   // DESTRUCTION on nothing) and can only ever admit OUT_OF_SCOPE.
   for (const idx of secondaryIdx) {
     if (isSecondaryCandidateNamedVerb(words, idx)) {
-      return { verdict: 'OUT_OF_SCOPE', reason: 'a listed verb may be present past an unresolved prefix chain' };
+      return { verdict: 'OUT_OF_SCOPE', reason: 'a listed verb may be present past an unresolved prefix chain', kind: KIND_UNJUDGED };
     }
   }
   return { verdict: 'NO_MATCH' };
@@ -577,7 +593,7 @@ export function parseCommand(input) {
 
   const { tokens, errors } = tokenize(input);
   if (errors.length > 0) {
-    return { verdict: 'OUT_OF_SCOPE', findings: errors.map((reason) => ({ reason })) };
+    return { verdict: 'OUT_OF_SCOPE', findings: errors.map((reason) => ({ reason, kind: KIND_UNJUDGED })) };
   }
 
   const segments = splitSegments(tokens);

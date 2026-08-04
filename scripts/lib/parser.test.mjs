@@ -6,6 +6,10 @@ function verdictOf(cmd) {
   return parseCommand(cmd).verdict;
 }
 
+function kindOf(cmd) {
+  return parseCommand(cmd).findings[0]?.kind;
+}
+
 // --- Group 1: false positives (a quoted argument is not a command) ---
 // ships-if-missing: any destructive-looking substring anywhere in a command's
 // text blocks the command, even when it never runs as a command.
@@ -738,4 +742,102 @@ test('git as a sudo -u flag VALUE (a username) still correctly stays NO_MATCH (s
 test('git genuinely in command position after sudo flags still resolves via its own precise subcommand check', () => {
   assert.equal(verdictOf('sudo -H -u www-data git status'), 'NO_MATCH');
   assert.equal(verdictOf('sudo -H -u www-data git clean -fdx'), 'OUT_OF_SCOPE');
+});
+
+// --- Group 30 (work unit, kind field) - every OUT_OF_SCOPE site carries an
+// explicit kind: 'declared' (the owner's own scope boundary working as
+// designed), 'unrouted' (a named direct destroyer we knowingly do not
+// route), or 'unjudged' (the parser could not read the construct at all -
+// this is the ceiling metric for whether the guard is degrading into a
+// shrug). The partition must live on the field, never be re-derived from
+// the reason string - a prose grouping mis-files the next reason string
+// somebody adds, silently ---
+// ships-if-missing: OUT_OF_SCOPE stays one undifferentiated bucket and
+// nobody can tell a deliberate scope choice from a parser blind spot.
+test('a wrapper the owner declared out of scope (make) carries kind declared', () => {
+  assert.equal(kindOf('make clean'), 'declared');
+});
+
+test('npm run is declared', () => {
+  assert.equal(kindOf('npm run clean'), 'declared');
+});
+
+test('xargs is declared', () => {
+  assert.equal(kindOf('cat files.txt | xargs rm'), 'declared');
+});
+
+test('find -exec is declared', () => {
+  assert.equal(kindOf('find . -name "*.tmp" -exec rm {} \\;'), 'declared');
+});
+
+test('a POSIX interpreter one-liner is declared', () => {
+  assert.equal(kindOf('node -e "1"'), 'declared');
+});
+
+test('a Windows one-liner is declared', () => {
+  assert.equal(kindOf('pwsh -C "rm x"'), 'declared');
+});
+
+test('cmd /c is declared', () => {
+  assert.equal(kindOf('cmd /c "del x"'), 'declared');
+});
+
+test('bash invoking a script file is declared', () => {
+  assert.equal(kindOf('bash deploy.sh'), 'declared');
+});
+
+test('a bare script-file invocation is declared', () => {
+  assert.equal(kindOf('./deploy.sh'), 'declared');
+});
+
+test('a named direct destroyer (shred) carries kind unrouted', () => {
+  assert.equal(kindOf('shred -u f'), 'unrouted');
+});
+
+test('a destructive git subcommand is unrouted', () => {
+  assert.equal(kindOf('git clean -fdx'), 'unrouted');
+});
+
+test('npx rimraf is unrouted', () => {
+  assert.equal(kindOf('npx rimraf x'), 'unrouted');
+});
+
+test('npm exec rimraf is unrouted', () => {
+  assert.equal(kindOf('npm exec rimraf x'), 'unrouted');
+});
+
+test('a heredoc, which the parser cannot see inside, carries kind unjudged', () => {
+  assert.equal(kindOf('bash <<EOF\nrm -rf /\nEOF'), 'unjudged');
+});
+
+test('a non-stdout fd redirect after a non-destructive verb is unjudged', () => {
+  assert.equal(kindOf('cat file 2> notes.txt'), 'unjudged');
+});
+
+test('a bare non-stdout fd redirect with no command words is unjudged', () => {
+  assert.equal(kindOf('2> notes.txt'), 'unjudged');
+});
+
+test('a redirect with no target token is unjudged', () => {
+  assert.equal(kindOf('echo >'), 'unjudged');
+});
+
+test('a subshell is unjudged', () => {
+  assert.equal(kindOf('(rm -rf /tmp/x)'), 'unjudged');
+});
+
+test('the secondary-candidate admission past an unresolved prefix chain is unjudged', () => {
+  assert.equal(kindOf('sudo -u root cat rm'), 'unjudged');
+});
+
+test('an mv shape the parser cannot resolve is unjudged', () => {
+  assert.equal(kindOf('mv'), 'unjudged');
+});
+
+test('a tokenizer error (unterminated quote) is unjudged', () => {
+  assert.equal(kindOf('rm -rf "foo'), 'unjudged');
+});
+
+test('non-string input carries no kind at all - it is a caller contract violation, never a command-construct judgment', () => {
+  assert.equal(parseCommand(123).findings[0].kind, undefined);
 });

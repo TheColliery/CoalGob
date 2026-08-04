@@ -1471,3 +1471,39 @@ test('the whole truncate -s option-grammar set resolves correctly', () => {
     assert.equal(verdictOf(cmd), expected, cmd);
   }
 });
+
+// --- Group 47 (defence round 3, Set S5) - word/operator scanning: the
+// WHOLE backslash-newline line-continuation shape (end-of-line, with
+// leading indentation on the continued line, and mid-word), plus >&word
+// as bash's truncating synonym for &>word. Boundary, stated: a backslash
+// followed by anything OTHER than a newline is unaffected - this only
+// removes the exact \<newline> pair, never any other escape ---
+// ships-if-missing (continuation): bash deletes \<newline> entirely: this
+// parser glued a literal embedded newline onto the next word instead, so
+// `rm` behind a continuation matched nothing.
+// ships-if-missing (>&word): `>&word` truncates a NAMED FILE - the
+// parser's own core in-scope case - and it vanished into an fdDup op that
+// gets skipped wholesale with no target ever consumed.
+test('the whole backslash-continuation + >&word set resolves correctly', () => {
+  const cases = [
+    ['cd build && \\\nrm -rf node_modules', 'DESTRUCTION'],
+    ['mkdir -p a && \\\n  rm -rf a/old', 'DESTRUCTION'],
+    ['r\\\nm victim.txt', 'DESTRUCTION'],
+    ['echo hi >& out.txt', 'DESTRUCTION'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});
+
+test('a genuine trailing backslash at end of input (no newline after) is still OUT_OF_SCOPE (control)', () => {
+  assert.equal(verdictOf('rm -rf foo\\'), 'OUT_OF_SCOPE');
+});
+
+test('>&- (fd-close) is still NO_MATCH, unaffected by the >&word fix (control)', () => {
+  assert.equal(verdictOf('cmd >&-'), 'NO_MATCH');
+});
+
+test('2>&1 (fd-dup) is still NO_MATCH, unaffected by the >&word fix (control)', () => {
+  assert.equal(verdictOf('cmd 2>&1'), 'NO_MATCH');
+});

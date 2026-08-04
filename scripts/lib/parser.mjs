@@ -250,6 +250,11 @@ function tokenize(input) {
     if (c === '\n') { tokens.push({ type: 'op', value: '\n' }); i++; continue; }
     if (c === ';') { tokens.push({ type: 'op', value: ';' }); i++; continue; }
 
+    // A backslash-newline line-continuation, occurring BETWEEN tokens (not
+    // mid-word - that spelling is handled inside the word-scan loop below).
+    // Bash deletes the pair entirely, no token, no glued newline.
+    if (c === '\\' && input[i + 1] === '\n') { i += 2; continue; }
+
     // A `#` reaching this point is at word-boundary position (a mid-word
     // `#` never gets here - it is absorbed into the word-scanning branch
     // below, matching real bash). Comment runs to end of line; the
@@ -290,6 +295,16 @@ function tokenize(input) {
         let operand = '';
         if (input[i] === '-') { operand = '-'; i++; }
         else { while (i < n && /[0-9]/.test(input[i])) { operand += input[i]; i++; } }
+        if (operand === '') {
+          // >&word (word is not -/digits) is bash's accepted synonym for
+          // &>word - a truncating redirect to a real file, never a
+          // descriptor operation (which requires an explicit -/digit
+          // operand). Same op shape &>'s own branch already emits, so the
+          // normal redirect-target consumption picks up the word that
+          // follows and classifyRedirectOp already routes it to truncate.
+          tokens.push({ type: 'op', value: '&>' });
+          continue;
+        }
         tokens.push({ type: 'op', value: `${fd || '1'}>&${operand}`, fdDup: true });
         continue;
       }
@@ -359,6 +374,7 @@ function tokenize(input) {
       const ch = input[i];
       if (ch === ' ' || ch === '\t' || ch === '\n' || ';|&><'.includes(ch)) break;
       if (ch === '\\') {
+        if (input[i + 1] === '\n') { i += 2; continue; }
         if (i + 1 >= n) { errors.push('trailing backslash at end of command'); i = n; brokeOnError = true; break; }
         value += input[i + 1]; i += 2; continue;
       }

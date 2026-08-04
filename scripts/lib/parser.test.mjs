@@ -3066,3 +3066,24 @@ test('rd routes through rmdir\'s own analyzer, same command two names (Set Z3)',
   assert.equal(result.findings[0].target, 'build');
   assert.deepEqual(result, parseCommand('rmdir /S /Q build'));
 });
+
+// --- Group 89 (wave 8, Set Z4) - `isNonFileSink('')` answered TWO
+// opposite questions from one predicate. For a redirect TARGET, `> ""`
+// creates nothing (CITED, RAN live: `echo hi > ""` errors "No such file
+// or directory") - `''` correctly counts as "not a real destructible
+// target" there. For cp's SOURCE, the shared exemption read the same
+// `true` as "source is /dev/null-like, so the destination truncates" -
+// but CITED, RAN live this round: `cp "" dest.txt` errors "cannot stat
+// '': No such file or directory" and dest.txt is UNTOUCHED - cp never
+// reaches the destination at all. Split the question (isNullDeviceSource
+// excludes '', isNonFileSink keeps it) rather than tuning one predicate
+// two ways.
+// ships-if-missing: `cp "" dest.txt` is flagged OUT_OF_SCOPE ("cp from
+// a null-sink source truncates its target") for a command that touches
+// nothing.
+test('an empty string is inert for a redirect target, but NOT a device sink for a cp source (Set Z4)', () => {
+  assert.equal(verdictOf('echo hi > ""'), 'NO_MATCH');
+  assert.equal(verdictOf('cp "" dest.txt'), 'NO_MATCH');
+  // A REAL device sink as cp's source is unaffected (control).
+  assert.equal(kindOf('cp /dev/null dest.txt'), 'unrouted');
+});

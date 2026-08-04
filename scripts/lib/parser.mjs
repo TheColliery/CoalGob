@@ -238,24 +238,16 @@ const FD_SINK_RE = /^\/(dev\/fd|proc\/self\/fd)\/\d+$/;
 const TTY_SINK_RE = /^\/dev\/(tty|pts\/)\d+$/;
 const WINDOWS_UNC_NUL_PREFIX = '\\\\.\\';
 
-function isNonFileSink(target) {
-  // `target` is often the result of a positional-argument LOOKUP
-  // (firstPositional, args[0]?.value, a redirect's own target word) -
-  // "no argument found" is a real, reachable shape (`cp` with no
-  // operand at all), and `undefined`/non-string must never reach
-  // `posix.normalize`, which throws on anything but a string. Absence
-  // of a target is not a null-sink - a caller with nothing to check
-  // gets `false`, the same "not a sink" answer a real ordinary path
-  // would get.
+// A REAL device sink by name (/dev/null, a numbered fd/tty, Windows
+// NUL) - the ONE question both callers below agree on. `target` is
+// often the result of a positional-argument LOOKUP (firstPositional,
+// args[0]?.value, a redirect's own target word) - "no argument found"
+// is a real, reachable shape (`cp` with no operand at all), and
+// `undefined`/non-string must never reach `posix.normalize`, which
+// throws on anything but a string - absence of a target is not a sink,
+// the same "not a sink" answer a real ordinary path would get.
+function isRealDeviceSink(target) {
   if (typeof target !== 'string') return false;
-  // An empty-string target is not a DEVICE sink, but shares the same
-  // exemption every caller here needs: CITED, verified live on this
-  // host's bash this round - `echo hi > ""` errors "No such file or
-  // directory" and creates NOTHING. An empty path is rejected outright,
-  // never a real file that gets truncated - the same "not a real
-  // destructible target" conclusion this function's callers already act
-  // on for every other non-file case.
-  if (target === '') return true;
   // Lexical normalization only (pure string op, no filesystem access -
   // ruling 3 holds) - collapses a trivially different spelling of the same
   // POSIX device path (`/dev/./null`, `/dev/../dev/null`) before comparing.
@@ -265,6 +257,29 @@ function isNonFileSink(target) {
   if (TTY_SINK_RE.test(normalized)) return true;
   const stripped = target.startsWith(WINDOWS_UNC_NUL_PREFIX) ? target.slice(WINDOWS_UNC_NUL_PREFIX.length) : target;
   return stripped.toLowerCase() === 'nul';
+}
+
+// For a redirect TARGET: an empty string is ALSO inert, though it is not
+// a device by name - CITED, RUN live: `echo hi > ""` errors "No such
+// file or directory" and creates NOTHING, the same "not a real
+// destructible target" conclusion a device sink already gets.
+function isNonFileSink(target) {
+  if (typeof target !== 'string') return false;
+  if (target === '') return true;
+  return isRealDeviceSink(target);
+}
+
+// For cp's SOURCE (Set Z4, wave 8, defence round 9): an empty string is
+// a DIFFERENT failure, not the same exemption. CITED, RUN live this
+// round: `cp "" dest.txt` errors "cannot stat '': No such file or
+// directory" and dest.txt is UNTOUCHED - cp never reaches its
+// destination at all, which is not "source is /dev/null-like, so the
+// destination truncates" (isNonFileSink's own question) but "cp itself
+// does nothing". Deliberately does NOT exempt '' - only a REAL device
+// sink counts here; isNonFileSink's shared '' exemption was answering
+// the wrong question when reused for this caller.
+function isNullDeviceSource(source) {
+  return isRealDeviceSink(source);
 }
 
 // --- tokenizer -----------------------------------------------------------
@@ -1290,13 +1305,15 @@ function classifyVerb(verb, verbLower, args, heredoc, fdOutOfScope, precededByPi
   if (NAMED_DESTROYER_VERBS.has(verbLower)) {
     return { verdict: 'OUT_OF_SCOPE', reason: `${verbLower} is a direct destroyer this parser does not route`, kind: KIND_UNROUTED };
   }
-  if (verbLower === 'cp' && isNonFileSink(firstPositional(args))) {
-    // Copying FROM a null-sink source truncates the target - an ordinary
-    // `cp a b` (copy is not in scope) is unaffected. CITED SOURCE: `cp
-    // --help`, RUN live - SOURCE is a positional operand in every one of
-    // cp's own usage forms, so a flag in front of it (`-f`, `-v`, any
-    // boolean short/long form) must not defeat this check the way
-    // `args[0]` did. Boundary, stated: `-t DIRECTORY` (cp's one
+  if (verbLower === 'cp' && isNullDeviceSource(firstPositional(args))) {
+    // Copying FROM a REAL device sink truncates the target - an empty
+    // string is deliberately NOT this shape (Set Z4, defence round 9 -
+    // isNullDeviceSource, not isNonFileSink; see its own citation) - an
+    // ordinary `cp a b` (copy is not in scope) is unaffected. CITED
+    // SOURCE: `cp --help`, RUN live - SOURCE is a positional operand in
+    // every one of cp's own usage forms, so a flag in front of it (`-f`,
+    // `-v`, any boolean short/long form) must not defeat this check the
+    // way `args[0]` did. Boundary, stated: `-t DIRECTORY` (cp's one
     // VALUE-taking short flag before SOURCE) is not resolved here - it
     // is a separate, uncited claim this fix does not make.
     return { verdict: 'OUT_OF_SCOPE', reason: 'cp from a null-sink source truncates its target', kind: KIND_UNROUTED };

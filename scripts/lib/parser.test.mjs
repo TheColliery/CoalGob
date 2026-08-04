@@ -1958,6 +1958,37 @@ test('the whole path-qualified / .exe-suffixed prefix set resolves correctly', (
   }
 });
 
+// --- Group 67 (defence round 6, Set V3) - AXIS: sibling operator-
+// context (a NEW axis - not sibling flag/verb/value-form/platform).
+// `pushSeparator()` resets `bracketDepth`/`parenDepth` on EVERY
+// SEGMENT_SEPARATORS op including `&&`/`||`, but bash's `[[ ... ]]`
+// test and `(( ... ))` arithmetic context take their OWN `&&`/`||`
+// internally (CITED, verified live on this host's bash:
+// `[[ -f a || $b ]] > /dev/null` and `[[ $x -eq 1 && $x -lt 5 ]]` both
+// run as ONE test, never split at the `&&`/`||`). Scoped to exactly
+// `&&`/`||` (what was cited and tested) - a bare `&`/`|` inside
+// `(( ))`'s own bitwise operators is a NAMED, NOT-YET-COVERED boundary
+// (uncited here) ---
+// ships-if-missing: `[[ -f a && $b > c ]]` truncates nothing (a pure
+// string comparison) but is reported as a truncating redirect to `c`,
+// because bracketDepth/parenDepth reset at the `&&` and every later
+// `>` becomes a real redirect.
+test('the whole &&/|| inside [[ ]] and (( )) context set resolves correctly', () => {
+  const cases = [
+    ['[[ -f a && $b > c ]]', 'NO_MATCH'],
+    ['[[ $x == a || $y > b ]]', 'NO_MATCH'],
+    ['[[ $a > $b && $c > $d ]]', 'NO_MATCH'],
+    ['if (( x > 0 && y > 1 )); then echo hi; fi', 'NO_MATCH'],
+    ['[[ "$a" > "$b" ]]', 'NO_MATCH'],
+    ['[[ -f a && -f b ]]', 'NO_MATCH'],
+    ['if (( $# > 0 )); then echo hi; fi', 'NO_MATCH'],
+    ['echo hi && rm -rf x', 'DESTRUCTION'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});
+
 test('no listed verb throws when invoked bare or with flags only', () => {
   for (const verb of EVERY_LISTED_VERB) {
     for (const cmd of [verb, `${verb} -f`, `${verb} --flag`]) {

@@ -320,13 +320,27 @@ function tokenize(input) {
     }
 
     if (c === '|') {
-      if (input[i + 1] === '|') { pushSeparator('||'); i += 2; }
-      else { pushSeparator('|'); i++; }
+      if (input[i + 1] === '|') {
+        // `||` inside an open `[[ ]]` test or `(( ))`/`$(( ))` arithmetic
+        // context is the CONSTRUCT'S OWN logical-or - never a command
+        // separator (CITED, verified live on this host's bash:
+        // `[[ -f a || $b ]]` runs as one test). Emitted as an inert word,
+        // matching how `>`/`<` already stay inert in the same contexts -
+        // NEVER resets depth, never splits the segment.
+        if (bracketDepth > 0 || parenDepth > 0) { tokens.push({ type: 'word', value: '||', end: i + 2 }); i += 2; continue; }
+        pushSeparator('||'); i += 2;
+      } else { pushSeparator('|'); i++; }
       continue;
     }
 
     if (c === '&') {
-      if (input[i + 1] === '&') { pushSeparator('&&'); i += 2; continue; }
+      if (input[i + 1] === '&') {
+        // Same construct, `&&` - CITED, verified live:
+        // `[[ $x -eq 1 && $x -lt 5 ]]` and `(( x > 0 && y > 1 ))` both
+        // run as one test/expression, never split at the `&&`.
+        if (bracketDepth > 0 || parenDepth > 0) { tokens.push({ type: 'word', value: '&&', end: i + 2 }); i += 2; continue; }
+        pushSeparator('&&'); i += 2; continue;
+      }
       if (input[i + 1] === '>') {
         if (input[i + 2] === '>') { tokens.push({ type: 'op', value: '&>>' }); i += 3; }
         else { tokens.push({ type: 'op', value: '&>' }); i += 2; }

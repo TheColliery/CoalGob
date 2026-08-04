@@ -898,3 +898,27 @@ test('bare git reset (no --hard) stays NO_MATCH - soft/mixed do not touch the wo
 test('git reset --soft stays NO_MATCH (control)', () => {
   assert.equal(verdictOf('git reset --soft HEAD~1'), 'NO_MATCH');
 });
+
+// --- Group 33 (work unit, Group B) - a leading input redirect must not
+// displace the verb - `<` is skipped without consuming its own target
+// word, so the target becomes word 0 and the real verb becomes an
+// argument ---
+// ships-if-missing: `< /dev/null rm -rf build`, ordinary legal bash, resolves
+// its verb to `/dev/null` and never looks at `rm` - the single most
+// dangerous kind of miss this parser can produce.
+test('a leading input redirect does not displace the verb (/dev/null target)', () => {
+  assert.equal(verdictOf('< /dev/null rm -rf build'), 'DESTRUCTION');
+});
+
+test('a leading input redirect does not displace the verb (ordinary file target)', () => {
+  assert.equal(verdictOf('< input.txt rm x'), 'DESTRUCTION');
+});
+
+test('an input redirect after the verb still does not add a spurious argument', () => {
+  assert.equal(verdictOf('rm < input.txt x'), 'DESTRUCTION');
+});
+
+test('an input redirect is never itself reported as a destructive target', () => {
+  const result = parseCommand('< /dev/null rm -rf build');
+  assert.equal(result.findings.some((f) => f.target === '/dev/null'), false);
+});

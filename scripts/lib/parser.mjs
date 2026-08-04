@@ -42,8 +42,9 @@
 //     backtick form is recognized ONLY when it opens the segment (word 0);
 //     the same construct appearing later in an argument is invisible.
 //   - `eval` is recognized as a verb; its argument string is never parsed.
-//   - Redirect input (`<`) does not consume its target as a non-argument
-//     word, so `cmd < file` leaves `file` in the argument list.
+//   - Redirect input (`<`) consumes its target word (so a leading `< file
+//     cmd` cannot displace `cmd` into becoming the resolved verb) but is
+//     never itself treated as destructive - an input redirect only reads.
 //   - fd-duplication/close (`>&N`, `>&-`) is recognized only in the `>&`
 //     spelling, not `<&`.
 //   - A non-file sink is verified by name against a fixed list
@@ -522,7 +523,15 @@ function analyzeSegment(tokens) {
     const t = tokens[idx];
     if (t.type === 'op') {
       if (t.value === '<<' || t.value === '<<-' || t.value === '<<<') { heredoc = true; continue; }
-      if (t.value === '<' || t.fdDup) continue;
+      if (t.value === '<') {
+        // Consume the target the same way an output redirect does, so it
+        // never becomes word 0 and displaces the real verb - but never push
+        // it into `redirects`, since an input redirect is not destructive.
+        const target = tokens[idx + 1];
+        if (target && target.type === 'word') idx++;
+        continue;
+      }
+      if (t.fdDup) continue;
       const target = tokens[idx + 1];
       if (!target || target.type !== 'word') {
         return { verdict: 'OUT_OF_SCOPE', reason: `redirect ${t.value} has no target`, kind: KIND_UNJUDGED };

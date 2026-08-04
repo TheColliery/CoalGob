@@ -425,6 +425,16 @@ function tokenize(input) {
     while (i < n) {
       const ch = input[i];
       if (ch === ' ' || ch === '\t' || ch === '\n' || ';|&><'.includes(ch)) break;
+      // ANSI-C quoting (`$'...'`) and locale-translation quoting
+      // (`$"..."`) - bash expands both to the quoted string's content
+      // and runs the result (`$'rm'` -> `rm`). The introducing `$` is
+      // consumed here without joining the value; the quote branches
+      // below then take over exactly as for a plain quoted string.
+      // Boundary, stated: ANSI-C's own backslash-escape decoding
+      // (`$'\x72\x6d'`) is NOT performed - content is taken literally,
+      // like an ordinary single-quoted string; this fix resolves the
+      // reported shape (a bare quoted verb), not full ANSI-C decoding.
+      if (ch === '$' && (input[i + 1] === "'" || input[i + 1] === '"')) { i++; continue; }
       if (ch === '\\') {
         if (input[i + 1] === '\n') { i += 2; continue; }
         if (i + 1 >= n) { errors.push('trailing backslash at end of command'); i = n; brokeOnError = true; break; }

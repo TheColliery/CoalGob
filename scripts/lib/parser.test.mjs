@@ -1935,3 +1935,25 @@ test('the whole Remove-Item -WhatIf prefix-floor set resolves correctly', () => 
     assert.equal(verdictOf(cmd), expected, cmd);
   }
 });
+
+// --- Group 61 (defence round 5, Set U6) - ANSI-C (`$'...'`) and
+// locale-translation (`$"..."`) quoting. Bash expands `$'rm'` to the
+// word `rm` and runs it (backslash escapes inside are ANSI-C decoded -
+// out of scope here, the boundary this fix accepts: content is taken
+// literally like a plain quoted string, only the introducing `$` is
+// stripped). `$"..."` with no translation catalog loaded yields the
+// literal string the same way. The tokenizer treated `$` as an ordinary
+// word character, so the verb read as `$rm`, matching nothing ---
+// ships-if-missing: `$'rm' f` and `$"rm" f` both delete `f` for real
+// while this parser reports NO_MATCH.
+test('the whole ANSI-C / locale quoting set resolves correctly', () => {
+  const cases = [
+    ["$'rm' f", 'DESTRUCTION'],
+    ['$"rm" f', 'DESTRUCTION'],
+    ["echo hi > $'f'", 'DESTRUCTION'],
+    ["echo 'rm -rf /'", 'NO_MATCH'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});

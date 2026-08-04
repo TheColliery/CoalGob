@@ -1416,3 +1416,30 @@ test('case declares its stated boundary: unjudged, never a silent NO_MATCH', () 
   assert.equal(verdictOf('case $x in a) rm y;; esac'), 'OUT_OF_SCOPE');
   assert.equal(kindOf('case $x in a) rm y;; esac'), 'unjudged');
 });
+
+// --- Group 45 (defence round 3, Set S3) - the WHOLE mv -f/-i/-n option
+// grammar: GNU getopt override semantics (repeats and mixed spellings -
+// LAST one wins, in argument order) and short-option clustering (-vn,
+// -nv). Boundary, stated: -i (interactive) never exempts on its own - a
+// prompt is not a guaranteed no-op in an unattended/agent context, so the
+// safe direction is to still treat it as a possible destruction ---
+// ships-if-missing: `mv -n -f a b` reports NO_MATCH (mv -n's own
+// exemption fired) although -f, coming LAST, restores overwriting and the
+// command really does overwrite b.
+test('the whole mv override-flag set resolves correctly', () => {
+  const cases = [
+    ['mv -n a b', 'NO_MATCH'],
+    ['mv --no-clobber a b', 'NO_MATCH'],
+    ['mv -n -f a b', 'DESTRUCTION'],
+    ['mv --no-clobber --force a b', 'DESTRUCTION'],
+    ['mv -f -n a b', 'NO_MATCH'],
+    ['mv -vn a b', 'NO_MATCH'],
+    ['mv -nv a b', 'NO_MATCH'],
+    ['mv -nf a b', 'DESTRUCTION'],
+    ['mv -i a b', 'DESTRUCTION'],
+    ['mv a b', 'DESTRUCTION'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});

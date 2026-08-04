@@ -462,11 +462,36 @@ function resolveVerb(words) {
 
 // --- mv (ruling 3: conditional on the runtime existence of its target) -----
 
+// The set: GNU mv's -f/-i/-n override grammar. -f/--force, -i/--interactive
+// and -n/--no-clobber override EACH OTHER - the LAST one, by argument
+// order, wins, and any of the three short forms may appear inside a
+// clustered token (-vn, -nv) alongside unrelated flags. Boundary, stated:
+// only -n's WINNING makes the command provably safe; -i winning does not
+// exempt it (a prompt is not a guaranteed no-op in an unattended context,
+// so the safe direction is to still treat it as a possible destruction).
+const MV_OVERRIDE_SHORT = new Set(['f', 'i', 'n']);
+const MV_OVERRIDE_LONG = { '--force': 'f', '--interactive': 'i', '--no-clobber': 'n' };
+
+function lastMvOverride(args) {
+  let last;
+  for (const w of args) {
+    const v = w.value;
+    if (v in MV_OVERRIDE_LONG) { last = MV_OVERRIDE_LONG[v]; continue; }
+    if (v.length > 1 && v[0] === '-' && v[1] !== '-') {
+      for (const ch of v.slice(1)) {
+        if (MV_OVERRIDE_SHORT.has(ch)) last = ch;
+      }
+    }
+  }
+  return last;
+}
+
 function analyzeMv(args) {
-  if (args.some((w) => w.value === '-n' || w.value === '--no-clobber')) {
-    // -n/--no-clobber guarantees mv never overwrites an existing target -
-    // the one mv shape provably safe without a runtime stat, the same
-    // class of exemption truncate's grow already gets.
+  if (lastMvOverride(args) === 'n') {
+    // -n winning (by argument order, across every spelling and cluster)
+    // guarantees mv never overwrites an existing target - the one mv
+    // shape provably safe without a runtime stat, the same class of
+    // exemption truncate's grow already gets.
     return { verdict: 'NO_MATCH' };
   }
   const tIdx = args.findIndex((w) => w.value === '-t');

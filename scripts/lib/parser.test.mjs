@@ -2344,6 +2344,40 @@ test('the whole ANSI-C escape-decoding set resolves correctly', () => {
   }
 });
 
+// --- Group 74 (defence round 7, Set W5) - AXES 4 (platform - a `.cmd`/
+// `.bat` file is a SCRIPT, not the coreutil it happens to be named
+// after) and 1 (spelling - the two extension sets were drifting toward
+// treating one spelling as a synonym of another they are not). CITED:
+// this room's own two tables directly contradicting each other -
+// `EXECUTABLE_EXTENSION_RE` stripped `.exe|.cmd|.bat|.com` before verb
+// lookup (treating all four as "the same program under a decoration"),
+// while `SCRIPT_EXTENSION` separately declared `.sh|.ps1|.py|.pl|.rb`
+// out of scope as unread script files. `.exe`/`.com` are genuinely
+// raw-binary executables - stripping them is a real precision gain,
+// nothing to read. `.cmd`/`.bat` are batch SCRIPT FILES - arbitrary
+// user-authored content, exactly the class `SCRIPT_EXTENSION` already
+// exists to decline judging. Moved `.cmd`/`.bat` from the stripped set
+// to the recognized-script set - the set that gets STRIPPED and the
+// set recognised as a SCRIPT must stay different, and now do ---
+// ships-if-missing: `./rm.cmd x` classifies as `DESTRUCTION` with `rm`'s
+// own precise argument grammar applied to a script file nobody read -
+// any repo shipping a wrapper named `rm.cmd`/`del.bat`/`mv.cmd` gets it
+// blocked as if it were the coreutil itself.
+test('the whole .cmd/.bat script-vs-executable set resolves correctly', () => {
+  const cases = [
+    ['./rm.cmd x', 'OUT_OF_SCOPE'],
+    ['./del.bat x', 'OUT_OF_SCOPE'],
+    ['./mv.cmd a b', 'OUT_OF_SCOPE'],
+    ['./truncate.bat f', 'OUT_OF_SCOPE'],
+    ['./rm.sh x', 'OUT_OF_SCOPE'],
+    ['rm.exe x', 'DESTRUCTION'],
+    ['del.exe x', 'DESTRUCTION'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});
+
 test('no listed verb throws when invoked bare or with flags only', () => {
   for (const verb of EVERY_LISTED_VERB) {
     for (const cmd of [verb, `${verb} -f`, `${verb} --flag`]) {

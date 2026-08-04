@@ -105,7 +105,13 @@ const SHELL_KEYWORDS = new Set(['do', 'then', 'else', 'elif', '!', 'if', 'while'
 const TIMEOUT_VERB = 'timeout';
 const ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const DURATION_RE = /^[\d.]+[smhd]?$/;
-const EXECUTABLE_EXTENSION_RE = /\.(exe|cmd|bat|com)$/i;
+// Genuinely raw-binary executable extensions ONLY - stripping these is a
+// real precision gain (`rm.exe` really is the same program as `rm`,
+// modulo PATH resolution), nothing to read. `.cmd`/`.bat` are batch
+// SCRIPT FILES, not binaries - moved to SCRIPT_EXTENSION below (Set W5,
+// defence round 7): the set that gets stripped and the set recognised
+// as a script must stay different.
+const EXECUTABLE_EXTENSION_RE = /\.(exe|com)$/i;
 
 function stripExeExtension(value) {
   return value.replace(EXECUTABLE_EXTENSION_RE, '');
@@ -209,7 +215,12 @@ const WINDOWS_ONE_LINER_VERBS = new Set(['pwsh', 'powershell']);
 const PKG_MANAGERS = new Set(['npm', 'yarn', 'pnpm', 'bun']);
 const GIT_DESTRUCTIVE_SUBCOMMANDS = new Set(['clean', 'rm', 'checkout', 'restore']);
 const NAMED_DESTROYER_VERBS = new Set(['shred', 'dd', 'eval', 'erase', 'rd']);
-const SCRIPT_EXTENSION = /\.(sh|ps1|py|pl|rb)$/i;
+// `.cmd`/`.bat` added (Set W5, defence round 7): batch SCRIPT FILES, not
+// binaries - previously stripped by EXECUTABLE_EXTENSION_RE above and so
+// classified as the coreutil they happened to be named after (`rm.cmd`
+// reaching full `rm` precision) instead of landing here, unread, like
+// every other script extension.
+const SCRIPT_EXTENSION = /\.(sh|ps1|py|pl|rb|cmd|bat)$/i;
 
 const NULL_SINKS = new Set([
   '/dev/null', '/dev/zero', '/dev/full', '/dev/tty', '/dev/stdout', '/dev/stderr',

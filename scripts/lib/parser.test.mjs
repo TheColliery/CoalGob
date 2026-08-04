@@ -2967,3 +2967,38 @@ test('verb and operator are mutually exclusive, and the RIGHT one, on every DEST
   assert.equal(outOfScope.verdict, 'OUT_OF_SCOPE');
   assert.ok(!('verb' in outOfScope.findings[0]) && !('operator' in outOfScope.findings[0]));
 });
+
+// --- Group 86 (wave 8, Set Z1+Z6) - AXIS 1 (spelling/value-form) +
+// SITE: `isValueTakingFlag` only ever knew truncate's own -s/--size -
+// every OTHER value-taking long option, on truncate or any other verb,
+// fell through to the generic boolean-flag skip, and its OWN value
+// (never a destroy target) was then miscounted as the NEXT positional
+// operand. Z1, the worst finding in the wave: `Remove-Item -Exclude
+// keep.txt` reports keep.txt - the ONE path the user explicitly
+// excluded from deletion - as at-risk. CITED SOURCE:
+// `(Get-Command Remove-Item).Parameters`, RUN live on this host
+// (PowerShell 5.1.26100.8972) - every parameter whose type is NOT
+// SwitchParameter takes a value on the next token; Path/LiteralPath are
+// the one exception (their value legitimately IS the target, so no
+// special-casing is needed there). Z6: truncate's -r/--reference=RFILE,
+// CITED `truncate --help` RUN live - "base size on RFILE", RFILE is
+// READ, never written - the same root as Z1, one verb over.
+// ships-if-missing (Z1): a remedy computed from this parser's own
+// finding set would rewrite the file the user asked to KEEP. ships-if-
+// missing (Z6): `truncate -r reffile target.txt` reports reffile as a
+// second at-risk path; reffile is never touched.
+test('every value-taking flag skips its own value, never counts it as a target (Set Z1+Z6)', () => {
+  const cases = [
+    ['Remove-Item -Exclude keep.txt -Path C:/logs', ['C:/logs']],
+    ['Remove-Item -ErrorAction Stop file.txt', ['file.txt']],
+    ['ri -Include *.log dir', ['dir']],
+    ['Remove-Item -Filter *.tmp -Force x.txt', ['x.txt']],
+    ['truncate -r reffile target.txt', ['target.txt']],
+    ['truncate --reference=reffile target.txt', ['target.txt']],
+  ];
+  for (const [cmd, targets] of cases) {
+    const result = parseCommand(cmd);
+    assert.equal(result.verdict, 'DESTRUCTION', cmd);
+    assert.deepEqual(result.findings.map((f) => f.target), targets, cmd);
+  }
+});

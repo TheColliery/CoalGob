@@ -1115,8 +1115,42 @@ function isWindowsSwitch(verbLower, value) {
 // token) must skip that token too, or its value miscounts as FILE.
 const TRUNCATE_BARE_S_CLUSTER_RE = /^-[a-zA-Z]*s$/;
 
+// truncate's OTHER value-taking option, CITED SOURCE `truncate --help`
+// RUN live this round (Set Z6, wave 8): "-r, --reference=RFILE  base
+// size on RFILE" - RFILE is READ to learn a size, never written. Same
+// shape as -s/--size above: a bare `-r`/a clustered `-Xr` (value in the
+// NEXT token) must skip that token too, or RFILE miscounts as a second
+// FILE operand.
+const TRUNCATE_BARE_R_CLUSTER_RE = /^-[a-zA-Z]*r$/;
+
+// Remove-Item's own value-taking parameters, CITED SOURCE
+// `(Get-Command Remove-Item).Parameters`, RUN live on this host
+// (PowerShell 5.1.26100.8972) this round (Set Z1, wave 8, the worst
+// finding in the wave) - every parameter whose type is NOT
+// SwitchParameter takes a value on the NEXT token when passed by name
+// (`-Exclude keep.txt`), and that value is NEVER a destroy target.
+// Path/LiteralPath are the one exception in the full parameter list -
+// their own value legitimately IS the target, so they are deliberately
+// NOT in this set; the generic positional push already gets them right.
+// PowerShell parameter names are case-insensitive (isSwitchOn/
+// isRemoveItemWhatIf already lowercase before comparing) - matched the
+// same way here.
+const REMOVE_ITEM_VALUE_FLAGS = new Set([
+  '-filter', '-include', '-exclude', '-credential', '-erroraction',
+  '-warningaction', '-informationaction', '-errorvariable',
+  '-warningvariable', '-informationvariable', '-outvariable',
+  '-outbuffer', '-pipelinevariable', '-stream',
+]);
+
 function isValueTakingFlag(verbLower, value) {
-  return verbLower === 'truncate' && (value === '--size' || TRUNCATE_BARE_S_CLUSTER_RE.test(value));
+  if (verbLower === 'truncate') {
+    return value === '--size' || TRUNCATE_BARE_S_CLUSTER_RE.test(value)
+      || value === '--reference' || TRUNCATE_BARE_R_CLUSTER_RE.test(value);
+  }
+  if (verbLower === 'remove-item') {
+    return REMOVE_ITEM_VALUE_FLAGS.has(value.toLowerCase());
+  }
+  return false;
 }
 
 // ponytail: 56 lines at declaration (defence round 8, Set Y1 - the

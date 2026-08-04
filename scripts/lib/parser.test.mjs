@@ -1858,28 +1858,34 @@ test('RI is case-insensitive, matching every other verb resolution in this parse
   assert.equal(verdictOf('RI foo.txt'), 'DESTRUCTION');
 });
 
-// --- Group 52 (defence round 4, Set T4) - Move-Item / move / mi. CITED
-// SOURCE: `Get-Alias -Definition Move-Item`, RUN live on this host
-// (PowerShell 5.1.26100.8972) this session -> mi, move, mv. `mv` is
-// already routed (POSIX mv, the same conditional semantics apply
-// identically to Move-Item); `mi` and `move` (also cmd.exe's own move
-// command, the same real operation under a third name) were not ---
-// ships-if-missing: `move a b` and `mi a b` - Move-Item's cmd.exe and
-// PowerShell-alias spellings - report NO_MATCH although they are the
-// exact operation `mv` is already guarded for.
-test('move (cmd.exe / PowerShell alias for Move-Item) carries mv-over-target semantics', () => {
-  const result = parseCommand('move a b');
+// --- Group 52 (defence round 4, Set T4; ROUTING CORRECTED wave 8, Set
+// Z2) - Move-Item / move / mi. CITED SOURCE: `Get-Alias -Definition
+// Move-Item`, RUN live on this host (PowerShell 5.1.26100.8972) ->
+// mi, move, mv - all THREE resolve to the SAME cmdlet. This group
+// originally routed `move` onto `mv`'s own GNU semantics (T4); Z2
+// (wave 8, defence round 9) found that a superficially-similar defect
+// to the one T4 itself already fixed for `mi` - a correct ALIAS
+// resolution is not the same claim as the ALIASED command sharing the
+// target's real behaviour. `move` now carries Move-Item's own verified
+// semantics, same as `mi` - see Group 55 below for the full citation.
+// ships-if-missing: `move -Force a b` - the real, documented overwrite
+// path - reports NO_MATCH; `move a b` (no -Force) is wrongly flagged
+// unconditional, a false positive Move-Item's own refusal disproves.
+test('move (cmd.exe / PowerShell alias) carries Move-Item semantics, not mv (Set Z2)', () => {
+  assert.equal(verdictOf('move a b'), 'NO_MATCH');
+  const result = parseCommand('move -Force a b');
   assert.equal(result.verdict, 'DESTRUCTION');
+  assert.equal(result.findings[0].verb, 'move-item');
   assert.equal(result.findings[0].conditional, true);
   assert.equal(result.findings[0].target, 'b');
 });
 
-test('move -n (no-clobber) is exempt, same as mv -n (control - full mv precision carries over)', () => {
-  assert.equal(verdictOf('move -n a b'), 'NO_MATCH');
+test('move --backup=numbered (a GNU-only mv flag) is NOT exempt - Move-Item has no such flag (Set Z2)', () => {
+  assert.equal(verdictOf('move --backup=numbered a b'), 'NO_MATCH');
 });
 
 test('MOVE is case-insensitive', () => {
-  assert.equal(verdictOf('MOVE a b'), 'DESTRUCTION');
+  assert.equal(verdictOf('MOVE -Force a b'), 'DESTRUCTION');
 });
 
 // --- Group 53 (defence round 4, Set T5) - PowerShell's `-Name:Value`
@@ -1966,10 +1972,12 @@ test('a real 2 fd-dup with a space still names no file (control, exact target ch
 // exists," touching neither file (provably safe regardless of runtime
 // state); `Move-Item -Force a b` onto an existing b succeeds and
 // overwrites it (conditional on b existing at runtime - the same model
-// mv already has). cmd.exe's own `move` is DELIBERATELY left aliased to
-// `mv` unchanged - a live probe suggested it also declines without /Y
-// under non-interactive stdin, but that is a separate, murkier question
-// this fix was not asked to resolve ---
+// mv already has). cmd.exe's own `move` was DELIBERATELY left aliased to
+// `mv` at the time - a live probe suggested it also declines without /Y
+// under non-interactive stdin, but that was a separate, murkier question
+// this fix was not asked to resolve. Superseded by Set Z2 (wave 8,
+// defence round 9): `move` now routes through Move-Item's own semantics
+// too, same as `mi` - see Group 52 above ---
 // ships-if-missing: `Move-Item -Force a.txt b.txt` - a real, unconditional
 // overwrite per the cmdlet's own documented behavior - reports NO_MATCH.
 test('bare Move-Item (no -Force) is not a destruction - provably refuses to overwrite', () => {
@@ -1991,8 +1999,16 @@ test('bare mi (no -Force) is not a destruction, unlike plain mv (control - the a
   assert.equal(verdictOf('mi a.txt b.txt'), 'NO_MATCH');
 });
 
-test('move /Y (cmd.exe, unaffected by this fix) is still a destruction (control)', () => {
-  assert.equal(verdictOf('move /Y a.txt b.txt'), 'DESTRUCTION');
+// `/Y` (cmd.exe's own overwrite-confirm switch, not a Move-Item
+// parameter) is no longer special-cased once `move` routes through
+// Move-Item (Set Z2): it does not start with `-`, so it is read as a
+// third bare positional, and 3+ positionals is Move-Item's own RAN-
+// verified throw-and-touch-nothing shape (Set Y2b, defence round 8) -
+// NO_MATCH, not a regression. cmd.exe's own native move.exe, reached
+// only OUTSIDE a PowerShell context, remains the separate, still-
+// unresolved question the round-4 handover named.
+test('move /Y (cmd.exe switch, meaningless to Move-Item) is NO_MATCH under the corrected routing (Set Z2)', () => {
+  assert.equal(verdictOf('move /Y a.txt b.txt'), 'NO_MATCH');
 });
 
 test('plain mv (POSIX, unaffected by this fix) still overwrites unconditionally by its own model (control)', () => {
@@ -3001,4 +3017,29 @@ test('every value-taking flag skips its own value, never counts it as a target (
     assert.equal(result.verdict, 'DESTRUCTION', cmd);
     assert.deepEqual(result.findings.map((f) => f.target), targets, cmd);
   }
+});
+
+// --- Group 87 (wave 8, Set Z2) - AXIS 8 (BEHAVIOUR EQUIVALENCE) +
+// SITE: CITED SOURCE `Get-Alias -Definition Move-Item` (already RUN
+// live, T4's own citation) returned THREE aliases for the SAME cmdlet -
+// mi, move, mv - yet `mi` routed to `analyzeMoveItem` (Move-Item's real
+// semantics) while `move` routed to `analyzeMv` (GNU mv's semantics,
+// including its `--backup` recoverability exemption, a GNU-only
+// property neither cmd.exe `move` nor Move-Item has). Two spellings of
+// ONE cmdlet, opposite verdicts on identical operands - `analyzeMoveItem`
+// already held the right behaviour; `move` just walked through the
+// wrong door.
+// ships-if-missing: `move a b c` reports two fabricated targets (a
+// shape Move-Item itself throws on and touches nothing for - Set Y2b,
+// defence round 8); `move --backup=numbered a b` is wrongly exempted by
+// a GNU flag Move-Item does not recognize.
+test('move routes through Move-Item, not GNU mv (Set Z2)', () => {
+  assert.equal(verdictOf('move a b c'), 'NO_MATCH');
+  assert.equal(verdictOf('mi a b c'), 'NO_MATCH');
+  assert.equal(verdictOf('move a b'), 'NO_MATCH');
+  assert.equal(verdictOf('move --backup=numbered a b'), 'NO_MATCH');
+  const withForce = parseCommand('move -Force a b');
+  assert.equal(withForce.verdict, 'DESTRUCTION');
+  assert.equal(withForce.findings[0].verb, 'move-item');
+  assert.equal(withForce.findings[0].target, 'b');
 });

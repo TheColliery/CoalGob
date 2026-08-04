@@ -1385,17 +1385,21 @@ const POWERSHELL_VERB_ALIASES = {
   // table's own header comment above - `sc` collides with sc.exe, the
   // Windows Service Controller.
   clc: 'clear-content',
-  // Get-Alias -Definition Move-Item -> mi, move, mv. `mi` resolves to
-  // move-item's OWN semantics below (NOT mv's - Move-Item requires
-  // -Force to overwrite, VERIFIED empirically on this host's PowerShell
-  // 5.1: bare Move-Item onto an existing target throws and touches
-  // neither file; -Force succeeds and overwrites). `move` (cmd.exe's own
-  // move, a different program) stays aliased to mv unchanged - a live
-  // probe suggested it also declines without /Y under non-interactive
-  // stdin, but that is a separate, unresolved question this table does
-  // not claim to answer.
+  // Get-Alias -Definition Move-Item -> mi, move, mv - all THREE are
+  // PowerShell aliases for the SAME cmdlet. Set Z2 (wave 8, defence
+  // round 9): `move` was aliased to `mv` instead, routing it through
+  // GNU mv's semantics (including mv's own `--backup` recoverability
+  // exemption, a GNU-only property neither cmd.exe's move.exe nor
+  // Move-Item has) - the exact axis-8 trap this table's own `mi`/`mv`
+  // T4 correction already named once (a correct ALIAS resolution is not
+  // the same claim as the ALIASED command sharing the target's real
+  // behaviour). All three spellings now resolve to move-item's own
+  // verified semantics (-Force required to overwrite). cmd.exe's own
+  // native move.exe, reached only OUTSIDE a PowerShell context, remains
+  // the separate, still-unresolved question the round-4 handover named -
+  // not re-opened here.
   mi: 'move-item',
-  move: 'mv',
+  move: 'move-item',
 };
 
 function verbAt(words, idx) {

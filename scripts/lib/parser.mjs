@@ -222,6 +222,15 @@ const TTY_SINK_RE = /^\/dev\/(tty|pts\/)\d+$/;
 const WINDOWS_UNC_NUL_PREFIX = '\\\\.\\';
 
 function isNonFileSink(target) {
+  // `target` is often the result of a positional-argument LOOKUP
+  // (firstPositional, args[0]?.value, a redirect's own target word) -
+  // "no argument found" is a real, reachable shape (`cp` with no
+  // operand at all), and `undefined`/non-string must never reach
+  // `posix.normalize`, which throws on anything but a string. Absence
+  // of a target is not a null-sink - a caller with nothing to check
+  // gets `false`, the same "not a sink" answer a real ordinary path
+  // would get.
+  if (typeof target !== 'string') return false;
   // Lexical normalization only (pure string op, no filesystem access -
   // ruling 3 holds) - collapses a trivially different spelling of the same
   // POSIX device path (`/dev/./null`, `/dev/../dev/null`) before comparing.

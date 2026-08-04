@@ -1886,6 +1886,68 @@ test('del stays Windows-only: --help/--version are NOT a no-op for it (control, 
   assert.equal(verdictOf('del --version important.txt'), 'DESTRUCTION');
 });
 
+// --- Group 65 (defence round 6, Set V1, CRITICAL) - parseCommand must
+// never THROW. `classifyVerb`'s cp branch called
+// `isNonFileSink(firstPositional(args))`; with no positional argument
+// at all, `firstPositional` returns `undefined` and `isNonFileSink`
+// handed it straight to `posix.normalize()`, which throws a TypeError.
+// This is neither a false positive nor a false negative - it is NO
+// VERDICT AT ALL, and in the PreToolUse hook this parser exists for, a
+// thrown exception is a crashed guard that blocks nothing (Phoenix #4).
+// Reachable behind any prefix (`sudo cp`). Fixed at the root:
+// `isNonFileSink` now type-checks its own argument, so every current
+// AND future call site is protected, not just the one that crashed ---
+// ships-if-missing: `cp` and `cp -r` throw instead of returning a
+// verdict.
+test('cp with no positional operand does not throw and reports NO_MATCH', () => {
+  assert.doesNotThrow(() => parseCommand('cp'));
+  assert.doesNotThrow(() => parseCommand('cp -r'));
+  assert.equal(verdictOf('cp'), 'NO_MATCH');
+  assert.equal(verdictOf('cp -r'), 'NO_MATCH');
+});
+
+test('cp with no positional operand does not throw even behind a prefix (control)', () => {
+  assert.doesNotThrow(() => parseCommand('sudo cp'));
+  assert.equal(verdictOf('sudo cp'), 'NO_MATCH');
+});
+
+test('isNonFileSink itself never throws on a non-string argument', () => {
+  assert.doesNotThrow(() => parseCommand('cp')); // exercises isNonFileSink(undefined)
+});
+
+// The broad sweep the dispatch asked for: every verb this parser's own
+// classifyVerb recognizes by name, invoked bare and with flags only (no
+// positional operand at all) - the exact shape that crashed cp. Every
+// one of these must return a verdict object, never throw. Verb lists
+// copied from parser.mjs's own sets (DESTRUCTION_VERBS, mv/move-item,
+// cp, tee/clear-content/set-content, WRAPPER_SCRIPT_VERBS,
+// POSIX_INTERPRETER_VERBS, WINDOWS_ONE_LINER_VERBS, PKG_MANAGERS,
+// NAMED_DESTROYER_VERBS, git, npx, cmd) so a future verb addition to
+// any of those sets is exercised here too once copied over.
+const EVERY_LISTED_VERB = [
+  'rm', 'rmdir', 'unlink', 'truncate', 'del', 'remove-item',
+  'mv', 'move-item', 'cp', 'tee', 'clear-content', 'set-content',
+  'bash', 'sh', 'zsh', 'ksh', 'dash', 'source', '.',
+  'node', 'python', 'python3', 'perl', 'ruby',
+  'pwsh', 'powershell',
+  'npm', 'yarn', 'pnpm', 'bun',
+  'shred', 'dd', 'eval', 'erase', 'rd',
+  'git', 'npx', 'cmd',
+];
+
+test('no listed verb throws when invoked bare or with flags only', () => {
+  for (const verb of EVERY_LISTED_VERB) {
+    for (const cmd of [verb, `${verb} -f`, `${verb} --flag`]) {
+      let result;
+      assert.doesNotThrow(() => { result = parseCommand(cmd); }, cmd);
+      assert.ok(
+        result && ['DESTRUCTION', 'OUT_OF_SCOPE', 'NO_MATCH'].includes(result.verdict),
+        `${cmd} -> ${JSON.stringify(result)}`,
+      );
+    }
+  }
+});
+
 // --- Group 57 (defence round 5, Set U3) - a `[[` only opens a bracket
 // test when it is a BARE, unquoted, unescaped keyword. `opensTest`
 // gated on command position but never on `quoted` - a quoted or

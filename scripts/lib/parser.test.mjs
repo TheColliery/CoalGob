@@ -2425,6 +2425,61 @@ test('clc (Clear-Content alias) resolves through the same alias mechanism as ri/
   assert.equal(verdictOf('Clear-Content notes.txt'), 'OUT_OF_SCOPE');
 });
 
+// --- Group 77 (defence round 7, Set W7, part 1) - AXIS 5 (structural
+// context - a NEW manifestation: single `&`/`|` are `(( ))`'s own
+// bitwise operators, the boundary V3 (round 6) named as not-yet-
+// covered when it closed `&&`/`||`). CITED, verified live on this
+// host's bash this round: `echo $(( 5 & 3 ))` -> `1`,
+// `echo $(( 5 | 2 ))` -> `7` - neither ends the arithmetic expression.
+// Scoped to `parenDepth` ONLY, never `bracketDepth`: CITED, verified
+// live - a bare `&` or `|` inside `[[ ]]` is a bash SYNTAX ERROR
+// ("conditional binary operator expected" / "unexpected token"), not a
+// valid operator there at all - `[[ ]]` and `(( ))` are NOT the same
+// exemption for these two, unlike `&&`/`||` which both contexts
+// genuinely accept ---
+// ships-if-missing: `echo $(( 5 & 3 )) > f` or a genuine destructive
+// verb after a bitwise-AND/OR arithmetic expression misreads the `&`/
+// `|` as ending the expression early.
+test('the whole single &/| bitwise-in-(( )) set resolves correctly', () => {
+  const cases = [
+    ['echo $(( 5 & 3 ))', 'NO_MATCH'],
+    ['echo $(( 5 | 2 ))', 'NO_MATCH'],
+    ['if (( 5 & 1 )); then rm x; fi', 'DESTRUCTION'],
+    ['if (( 5 | 2 )); then rm x; fi', 'DESTRUCTION'],
+    ['echo hi & rm -rf x', 'DESTRUCTION'],
+    ['echo hi | rm -rf x', 'DESTRUCTION'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});
+
+// --- Group 78 (defence round 7, Set W7, part 2) - AXES 5+7 (site -
+// `analyzeDestructionVerb`'s own main loop already honours `--` end-
+// of-options, the same site-consistency gap U4 closed for
+// `lastMvOverride` vs `analyzeMv`'s positional loop; `truncateGrowSize`
+// is a SIBLING helper scanning the SAME args array for a different
+// purpose and had no `--` awareness at all). `cp`'s own null-sink
+// check (`firstPositional`) was AUDITED, not found broken: it already
+// treats `--` as flag-shaped (correctly skipped, never mistaken for
+// the source) via the existing generic `isFlagShaped` walk - the
+// residual imprecision (a source literally named `-foo` immediately
+// after `--`) does not create a destructive-vs-safe miscall and is a
+// named, not-fixed boundary, not a defect this round closes ---
+// ships-if-missing: `truncate -- --size=+10 f` misreads the LITERAL
+// FILENAME `--size=+10` as a grow-safe size flag (option parsing ended
+// at `--`, so it is not a flag at all) and exempts a real destruction.
+test('the whole truncate -- end-of-options set resolves correctly', () => {
+  const cases = [
+    ['truncate -- --size=+10 f', 'DESTRUCTION'],
+    ['truncate --size=+10 f', 'NO_MATCH'],
+    ['truncate -- -s f', 'DESTRUCTION'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});
+
 test('no listed verb throws when invoked bare or with flags only', () => {
   for (const verb of EVERY_LISTED_VERB) {
     for (const cmd of [verb, `${verb} -f`, `${verb} --flag`]) {

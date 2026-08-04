@@ -354,6 +354,17 @@ function tokenize(input) {
         // NEVER resets depth, never splits the segment.
         if (bracketDepth > 0 || parenDepth > 0) { tokens.push({ type: 'word', value: '||', end: i + 2 }); i += 2; continue; }
         pushSeparator('||'); i += 2;
+      } else if (parenDepth > 0) {
+        // A single `|` inside an open `(( ))`/`$(( ))` arithmetic
+        // context is bitwise OR (Set W7, defence round 7, closing the
+        // boundary V3 named but did not close) - CITED, verified live
+        // on this host's bash this round: `echo $(( 5 | 2 ))` -> `7`.
+        // Scoped to `parenDepth` ONLY, never `bracketDepth`: a single
+        // `|` inside `[[ ]]` is a bash SYNTAX ERROR ("conditional
+        // binary operator expected"), not a valid operator there at
+        // all - `[[ ]]` and `(( ))` are NOT the same exemption here,
+        // unlike `&&`/`||` which both contexts genuinely accept.
+        tokens.push({ type: 'word', value: '|', end: i + 1 }); i++;
       } else { pushSeparator('|'); i++; }
       continue;
     }
@@ -370,6 +381,17 @@ function tokenize(input) {
         if (input[i + 2] === '>') { tokens.push({ type: 'op', value: '&>>' }); i += 3; }
         else { tokens.push({ type: 'op', value: '&>' }); i += 2; }
         continue;
+      }
+      if (parenDepth > 0) {
+        // A single `&` inside an open `(( ))`/`$(( ))` arithmetic
+        // context is bitwise AND (Set W7, defence round 7) - CITED,
+        // verified live on this host's bash this round:
+        // `echo $(( 5 & 3 ))` -> `1`. `bracketDepth` is deliberately
+        // NOT checked here - CITED, verified live: `[[ -f a & ]]` is a
+        // bash SYNTAX ERROR ("unexpected token `&'"), not a valid
+        // operator inside `[[ ]]` at all - same as single `|` above,
+        // `[[ ]]` and `(( ))` are not the same exemption here.
+        tokens.push({ type: 'word', value: '&', end: i + 1 }); i++; continue;
       }
       pushSeparator('&'); i++; continue;
     }
@@ -960,9 +982,19 @@ const TRUNCATE_JOINED_S_RE = /^-[a-zA-Z]*s(.*)$/;
 const TRUNCATE_GROW_ONLY_PREFIXES = new Set(['+', '>', '%']);
 
 function truncateGrowSize(args) {
+  // AXIS 5+7 (Set W7, defence round 7): `analyzeDestructionVerb`'s own
+  // main loop already honours `--` end-of-options (the SAME site-
+  // consistency gap U4 closed for `lastMvOverride` vs `analyzeMv`) -
+  // this sibling helper scans the SAME args array for a different
+  // purpose and had no `--` awareness at all, so a FILE literally named
+  // `--size=+10` after `--` would misread as the flag rather than a
+  // positional operand.
+  let endOptions = false;
   let size;
   for (let i = 0; i < args.length; i++) {
     const w = args[i].value;
+    if (!endOptions && w === '--') { endOptions = true; continue; }
+    if (endOptions) continue;
     if (w === '--size') { size = args[i + 1]?.value; continue; }
     if (w.startsWith('--size=')) { size = w.slice('--size='.length); continue; }
     const joinedShort = TRUNCATE_JOINED_S_RE.exec(w);

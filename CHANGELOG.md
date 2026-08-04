@@ -49,7 +49,7 @@ All notable changes to CoalGob are documented here. Format follows [Keep a Chang
   signal against zero code; owed at first push.
 - `SECURITY.md`, `PRIVACY.md`, `CONTRIBUTING.md` — would describe a product that does not exist yet;
   owed at first push.
-- `.githooks/` — `.gitattributes`' LF rule anticipates this dir (kept byte-identical to the sibling
-  repos on purpose — "one flock, one color" costs less than a hand-trimmed variant) but it is inert
-  until the dir exists; owed at the first build, since it is the only place the public-doc SSoT sync
-  gate (blueprint §13) can run — a CI job cannot see a gitignored `COALGOB_BLUEPRINT.md`.
+- `.githooks/` — `.gitattributes`' LF rule anticipates this dir (matches CoalMine's shape, not
+  CoalBoard's, per `0c00c0f` — "one flock, one color" costs less than a hand-trimmed variant) but it
+  is inert until the dir exists; owed at the first build, since it is the only place the public-doc
+  SSoT sync gate (blueprint §13) can run — a CI job cannot see a gitignored `COALGOB_BLUEPRINT.md`.

@@ -32,6 +32,12 @@ An agent is not more reckless than a user with a mouse; it is structurally route
 net a user gets for free (`rm`, `unlink`, `Remove-Item`, `shutil.rmtree` all bypass the Recycle Bin /
 Trash by default).
 
+CoalGob's scope is direct destruction verbs — `rm`, `rmdir`, `unlink`, `truncate`, `> file`, `mv`
+over an existing target, `Remove-Item`, `del` — not everything that could destroy indirectly. A
+wrapper that might run one of those verbs underneath (`make`, `npm run`, `xargs`, `find -exec`, an
+interpreter one-liner, a script file) is out of scope by design: recognizing what every wrapper might
+do would turn CoalGob into a general command classifier instead of a destruction guard.
+
 ## Status
 
 No hooks, no skills, no plugin, no interception code. This repository currently holds only the

@@ -526,17 +526,16 @@ test('rm --help (no --) is still not a destruction (control)', () => {
   assert.equal(verdictOf('rm --help'), 'NO_MATCH');
 });
 
-// --- Group 25 (head's ruling) - a gave-up prefix chain degrades to
-// OUT_OF_SCOPE when a listed verb is present in the remainder, never a
+// --- Group 25 (head's ruling) - a prefix chain that cannot be fully
+// resolved must still report an admission (OUT_OF_SCOPE) or DESTRUCTION
+// where the generic walk (Group 29 below) can now reach it, never a
 // silent NO_MATCH ---
 // ships-if-missing: `env FOO=bar rm x` / `sudo -u root rm x` - a listed rm,
 // merely wrapped in a prefix shape the resolver's declared limit does not
 // walk - reports NO_MATCH, the exact outcome this whole round exists to
 // remove, with the limit sitting undetected in a comment nobody reads.
-test('env FOO=bar rm (interleaved assignment after a prefix verb) is OUT_OF_SCOPE', () => {
-  assert.equal(verdictOf('env FOO=bar rm x'), 'OUT_OF_SCOPE');
-});
-
+// (`env FOO=bar rm x`'s own assertion moved to Group 29 - the defence-
+// round walk resolves it to full DESTRUCTION, not merely OUT_OF_SCOPE.)
 test('sudo -u root rm (round 5 walks the flag, reaching rm itself) is a destruction', () => {
   // Round 4's give-up remainder scan could only ADMIT a listed verb was
   // present (OUT_OF_SCOPE); round 5 properly walks sudo's own -u <value>
@@ -606,9 +605,12 @@ test('git clean genuinely in command position is still OUT_OF_SCOPE', () => {
   assert.equal(verdictOf('sudo -H -u www-data git clean -fdx'), 'OUT_OF_SCOPE');
 });
 
-test('rm as an ARGUMENT to cat (a filename) is not a command - not OUT_OF_SCOPE', () => {
-  assert.equal(verdictOf('sudo -u root cat rm'), 'NO_MATCH');
-});
+// `sudo -u root cat rm` moved to Group 29 below: the defence-round
+// structural walk knowingly trades this precision (a listed verb's name
+// appearing as an earlier command's own argument can now admit
+// OUT_OF_SCOPE) for closing the false-negative hole the same walk exists
+// to remove. Documented trade-off, not a regression - see the assertion
+// and its rationale there.
 
 // --- Group 28 (round 5) - fix the WALK, not just the flag table: sudo's own
 // flags are consumed as part of normal verb resolution (boolean flags
@@ -651,4 +653,89 @@ test('an unknown/unenumerated sudo flag defaults to boolean (the safe direction)
   // uncertain flag is "not value-taking" - skip it alone, so `rm` is the
   // very next word and is still reached.
   assert.equal(verdictOf('sudo -Z rm x'), 'DESTRUCTION');
+});
+
+// --- Group 29 (defence round 1, Group A) - the structural walk: a generic
+// candidate scan (never a per-tool flag table) guarantees a listed verb is
+// never silently missed behind an unrecognized flag, on ANY prefix verb,
+// short or long form. A per-tool table (sudo's) is only ever an
+// OPTIMIZATION that sharpens the PRIMARY candidate to full DESTRUCTION
+// precision; its absence for a prefix (nice/time/command/timeout) degrades
+// to the generic backstop's OUT_OF_SCOPE admission, never to NO_MATCH ---
+// ships-if-missing: a listed verb behind an unrecognized flag on ANY
+// prefix silently vanishes - this was independently rediscovered by an
+// out-of-frame attacker across six different spellings.
+test('nice -n 10 rm (separated-value form, no per-tool table for nice) is not silently missed', () => {
+  assert.notEqual(verdictOf('nice -n 10 rm -rf build'), 'NO_MATCH');
+});
+
+test('time -p rm (no per-tool table needed - -p skipped generically, rm is immediately next)', () => {
+  assert.equal(verdictOf('time -p rm x'), 'DESTRUCTION');
+});
+
+test('command -p rm (same mechanism as time -p)', () => {
+  assert.equal(verdictOf('command -p rm x'), 'DESTRUCTION');
+});
+
+test('timeout --signal=KILL 5 rm (long =-joined form after timeout) is not silently missed', () => {
+  assert.notEqual(verdictOf('timeout --signal=KILL 5 rm -rf build'), 'NO_MATCH');
+});
+
+test('timeout -k 5 10 rm (short value flag after timeout) is not silently missed', () => {
+  assert.notEqual(verdictOf('timeout -k 5 10 rm -rf build'), 'NO_MATCH');
+});
+
+test('sudo --user root rm (sudo long form, the walk optimization reaches full DESTRUCTION)', () => {
+  assert.equal(verdictOf('sudo --user root rm x'), 'DESTRUCTION');
+});
+
+test('nice --adjustment 10 rm (long form after nice) is not silently missed', () => {
+  assert.notEqual(verdictOf('nice --adjustment 10 rm -rf build'), 'NO_MATCH');
+});
+
+// Composition axis this round adds: a NON-SUDO prefix x a value-taking flag
+// x the path/suffix resolver (N2) - no round before this one crossed these
+// three. time -p sits the walk's PRIMARY candidate directly on the
+// path-qualified, suffix-stripped verb (full DESTRUCTION); nice -n 10 must
+// fall to the SECONDARY-candidate admission (OUT_OF_SCOPE) since nice has
+// no per-tool table, and the secondary path/suffix resolution must still
+// find it.
+test('time -p + a path-qualified, exe-suffixed rm reaches full DESTRUCTION (non-sudo prefix x flag x N2)', () => {
+  assert.equal(verdictOf('time -p /bin/rm.exe x'), 'DESTRUCTION');
+});
+
+test('nice -n 10 + a path-qualified, exe-suffixed rm is not silently missed (non-sudo prefix x flag x N2)', () => {
+  assert.notEqual(verdictOf('nice -n 10 /bin/rm.exe x'), 'NO_MATCH');
+});
+
+// Existing behavior this redesign LEGITIMATELY upgrades (the generic walk
+// naturally skips an interleaved assignment as a non-candidate, landing
+// the primary candidate precisely on rm - full DESTRUCTION where the
+// give-up mechanism could previously only admit OUT_OF_SCOPE).
+test('env FOO=bar rm now resolves to full DESTRUCTION via the generic walk', () => {
+  assert.equal(verdictOf('env FOO=bar rm x'), 'DESTRUCTION');
+});
+
+// Existing behavior this redesign KNOWINGLY trades: the secondary-candidate
+// backstop that closes the false-negative hole can also re-admit a listed
+// verb's name appearing as a later command's own argument. This is the
+// SAME safe-direction trade-off R2's own ruling pre-approved ("if a case
+// is genuinely undecidable, OUT_OF_SCOPE is the correct answer and it
+// stays") - never re-widened back to NO_MATCH, which is what actually
+// matters.
+test('sudo -u root cat rm: the secondary-candidate backstop now admits OUT_OF_SCOPE (documented trade-off, not a silent NO_MATCH)', () => {
+  assert.equal(verdictOf('sudo -u root cat rm'), 'OUT_OF_SCOPE');
+});
+
+// But precision the room already fought for is NOT thrown away wherever a
+// per-tool table exists: sudo's own -u <value> pairing still excludes the
+// value from ever becoming a candidate at all, so a username that
+// coincidentally matches a verb name is still correctly excluded.
+test('git as a sudo -u flag VALUE (a username) still correctly stays NO_MATCH (sudo table precision preserved)', () => {
+  assert.equal(verdictOf('sudo -u git echo hi'), 'NO_MATCH');
+});
+
+test('git genuinely in command position after sudo flags still resolves via its own precise subcommand check', () => {
+  assert.equal(verdictOf('sudo -H -u www-data git status'), 'NO_MATCH');
+  assert.equal(verdictOf('sudo -H -u www-data git clean -fdx'), 'OUT_OF_SCOPE');
 });

@@ -20,16 +20,24 @@
 // OUT_OF_SCOPE or a tokenizer error, never a silent NO_MATCH, EXCEPT where
 // noted):
 //   - The verb is resolved past a fixed prefix chain (VAR=value assignments,
-//     sudo/env/nice/time/command, timeout <duration>, sudo's own flags -
-//     value-taking ones with their value, everything else treated as
-//     boolean - and a path-qualified verb: basename AND a Windows
-//     executable extension both stripped). A shape outside that chain
-//     (e.g. an assignment interleaved after a prefix verb, `env FOO=bar
-//     rm x`) is not walked; the resolver gives up on the token it cannot
-//     place, and the REMAINDER is scanned - via the SAME verb resolution -
-//     for a listed verb in genuine command position (flag values and
-//     other commands' arguments are excluded by construction): found,
-//     OUT_OF_SCOPE (an admission, not a widening); none found, NO_MATCH.
+//     sudo/env/nice/time/command, timeout <duration>), then a GENERIC
+//     candidate walk (never a per-tool flag table) finds the real verb:
+//     every flag-shaped token (short, long, `=`-joined, clustered - all
+//     boolean by default) and every assignment is skipped; every other
+//     token is a candidate, in order. The first candidate gets full
+//     classification (can reach DESTRUCTION, and gets a resolved verb's
+//     own precise logic - e.g. git's subcommand check). If that is
+//     NO_MATCH, the walk keeps looking: every later candidate is checked
+//     by NAME only and can only ever admit OUT_OF_SCOPE (never a false
+//     DESTRUCTION on what may be an earlier command's own argument - see
+//     `sudo -u root cat rm`, a documented trade-off, not a regression).
+//     A per-tool table (sudo's own flags, short and long form), where one
+//     exists, is an OPTIMIZATION that sharpens WHICH token the walk starts
+//     from - full DESTRUCTION precision where it is complete, the same
+//     generic backstop where it is not. The walk never returns early
+//     because one token could not be classified; that is the structural
+//     property this design exists for. Path-qualified verbs (basename)
+//     and Windows executable extensions are stripped at every candidate.
 //   - A subshell `( )`, brace group `{ }`, or command substitution `$( )`/
 //     backtick form is recognized ONLY when it opens the segment (word 0);
 //     the same construct appearing later in an argument is invisible.
@@ -68,29 +76,59 @@ function normalizedVerbOf(value) {
   return stripExeExtension(basenameOf(value)).toLowerCase();
 }
 
-// Value-taking sudo flags: the token right after one is an argument (a
-// user/group/prompt/etc.), never a command word. `-h` is NOT here - it is
-// boolean (--help), not a value-taking flag; putting it here swallowed the
-// real command behind it. When it is uncertain whether a flag takes a
-// value, do NOT treat it as value-taking: swallowing a token that was
-// actually the COMMAND erases a listed verb and returns NO_MATCH - the
-// silent failure this parser exists to remove. Reading a flag's VALUE as a
-// command merely over-reports OUT_OF_SCOPE (see the `git`-as-username test
-// in the group below), which is the safe direction and a stated
-// non-judgment, never a false safety claim. Any flag NOT in this set is
-// therefore treated as boolean by default - the safe default, not a gap.
-const SUDO_VALUE_FLAGS = new Set(['-u', '-g', '-p', '-t', '-U', '-C', '-D', '-R', '-r', '-T', '-a']);
+function isFlagShaped(w) {
+  return w.length > 1 && w.startsWith('-');
+}
 
+// Value-taking sudo SHORT flags: the token right after one is an argument
+// (a user/group/prompt/etc.), never a command word. `-h` is NOT here - it
+// is boolean (--help), not value-taking; putting it here swallowed the
+// real command behind it.
+const SUDO_VALUE_FLAGS = new Set(['-u', '-g', '-p', '-t', '-U', '-C', '-D', '-R', '-r', '-T', '-a']);
+// The same, LONG form (`--flag value`, space-separated - `--flag=value` is
+// one self-contained token and needs no table at all, see isFlagShaped).
+const SUDO_LONG_VALUE_FLAGS = new Set([
+  '--user', '--group', '--prompt', '--type', '--other-user',
+  '--close-from', '--chdir', '--chroot', '--role', '--command-timeout', '--auth-type',
+]);
+
+// OPTIMIZATION over the generic walk below, scoped to sudo alone (never
+// applied to another prefix's remainder - that misapplication was itself
+// a defence-round finding). Sharpens the PRIMARY candidate to the exact
+// token past sudo's own flags, reaching full DESTRUCTION precision where
+// this table is complete. Where it is not (an unrecognized sudo flag), it
+// degrades to boolean-skip-alone, and the generic walk's SECONDARY-
+// candidate backstop still finds a listed verb one token further on - the
+// table is an accelerant, never a requirement for correctness.
 function skipSudoFlags(words, startIdx) {
   let i = startIdx;
   while (i < words.length) {
     const w = words[i].value;
     if (w === '--') { i += 1; break; }
-    if (SUDO_VALUE_FLAGS.has(w)) { i += 2; continue; }
-    if (w.length > 1 && w.startsWith('-')) { i += 1; continue; }
+    if (SUDO_VALUE_FLAGS.has(w) || SUDO_LONG_VALUE_FLAGS.has(w)) { i += 2; continue; }
+    if (isFlagShaped(w)) { i += 1; continue; }
     break;
   }
   return i;
+}
+
+// The structural fix: a walk that keeps advancing until it finds a token
+// in COMMAND position or runs out - it never returns early because one
+// token was unclassifiable. Flag-shaped tokens (short, long, `=`-joined,
+// clustered - all boolean by default) and assignments are excluded from
+// candidacy; every other token is a candidate, in order. Per-tool flag
+// knowledge (skipSudoFlags above), where it exists, only changes WHICH
+// token becomes the walk's starting point - it is never required for the
+// walk itself to find a listed verb.
+function walkCandidates(words, startIdx) {
+  const out = [];
+  for (let i = startIdx; i < words.length; i++) {
+    const w = words[i].value;
+    if (ASSIGNMENT_RE.test(w)) continue;
+    if (isFlagShaped(w)) continue;
+    out.push(i);
+  }
+  return out;
 }
 
 const WRAPPER_SCRIPT_VERBS = new Set(['bash', 'sh', 'zsh', 'ksh', 'dash', 'source', '.']);
@@ -287,70 +325,34 @@ function classifyRedirectOp(op) {
 
 // --- verb resolution (ruling: the verb can be prefixed) ---------------------
 
+// Consumes ONLY the recognized prefix chain (leading assignments, then a
+// run of PREFIX_VERBS/timeout) and stops - it never tries to classify what
+// comes after. What comes after (flags, more assignments, the real verb)
+// is the generic walk's job in analyzeSegment, not this function's.
 function resolveVerb(words) {
   let idx = 0;
   while (idx < words.length && ASSIGNMENT_RE.test(words[idx].value)) idx++;
   let consumedPrefix = idx > 0;
+  let lastPrefixVerb = null;
   while (idx < words.length) {
     const wLower = words[idx].value.toLowerCase();
     if (wLower === TIMEOUT_VERB) {
       idx++;
       if (idx < words.length && DURATION_RE.test(words[idx].value)) idx++;
+      lastPrefixVerb = TIMEOUT_VERB;
       consumedPrefix = true;
       continue;
     }
     if (PREFIX_VERBS.has(wLower)) {
       idx++;
+      lastPrefixVerb = wLower;
       consumedPrefix = true;
-      if (wLower === 'sudo') idx = skipSudoFlags(words, idx);
       continue;
     }
     break;
   }
   if (idx >= words.length) return null;
-
-  const stuck = words[idx].value;
-  // A leading '-' is a flag argument to the prefix (sudo -u, sudo -H, ...);
-  // an interleaved assignment is env's own `env FOO=bar cmd` shape. A
-  // leading '/' is NOT included here - it is an ordinary POSIX absolute
-  // path to the next command (`sudo /bin/rm`, the normal way sudo is
-  // written on Linux), never a flag for any verb in PREFIX_VERBS (none of
-  // sudo/env/nice/time/command takes a `/`-prefixed flag).
-  if (consumedPrefix && (stuck.startsWith('-') || ASSIGNMENT_RE.test(stuck))) {
-    // The resolver is mid prefix-chain and the next token isn't a
-    // plausible command word either. Declared known limit: give up here
-    // rather than guess: the caller decides OUT_OF_SCOPE vs NO_MATCH by
-    // scanning the remainder, with the SAME verb resolution (basename +
-    // exe-extension stripping) this function itself uses below.
-    return { gaveUp: true, remainder: words.slice(idx) };
-  }
-
-  const base = basenameOf(stuck);
-  return { base, baseLower: stripExeExtension(base).toLowerCase(), index: idx };
-}
-
-// Positional reasoning over a gave-up remainder: find the first token that
-// is genuinely in COMMAND position (skipping sudo's own flags and the
-// values of ones that take them), and check ONLY that token. A listed
-// verb's name showing up later - as a flag's value (`-u git`) or as
-// another command's own argument (`cat rm`) - is not that verb being
-// invoked, and must not be flagged.
-function firstCommandWordOf(remainder) {
-  let i = 0;
-  while (i < remainder.length) {
-    const w = remainder[i].value;
-    if (SUDO_VALUE_FLAGS.has(w)) { i += 2; continue; }
-    if (w === '--' || w.startsWith('-') || ASSIGNMENT_RE.test(w)) { i += 1; continue; }
-    return w;
-  }
-  return null;
-}
-
-function remainderHasListedVerb(remainder) {
-  const word = firstCommandWordOf(remainder);
-  if (word === null) return false;
-  const wl = normalizedVerbOf(word);
-  return DESTRUCTION_VERBS.has(wl) || wl === 'mv' || NAMED_DESTROYER_VERBS.has(wl) || wl === 'git';
+  return { index: idx, consumedPrefix, lastPrefixVerb };
 }
 
 // --- mv (ruling 3: conditional on the runtime existence of its target) -----
@@ -406,57 +408,11 @@ function analyzeDestructionVerb(verbLower, args) {
   return { verdict: 'DESTRUCTION', verb: verbLower, conditional: false };
 }
 
-// --- one segment -------------------------------------------------------
-
-function analyzeSegment(tokens) {
-  let heredoc = false;
-  const words = [];
-  const redirects = [];
-
-  for (let idx = 0; idx < tokens.length; idx++) {
-    const t = tokens[idx];
-    if (t.type === 'op') {
-      if (t.value === '<<' || t.value === '<<-' || t.value === '<<<') { heredoc = true; continue; }
-      if (t.value === '<' || t.fdDup) continue;
-      const target = tokens[idx + 1];
-      if (!target || target.type !== 'word') {
-        return { verdict: 'OUT_OF_SCOPE', reason: `redirect ${t.value} has no target` };
-      }
-      redirects.push({ op: t.value, target: target.value });
-      idx++;
-      continue;
-    }
-    words.push(t);
-  }
-
-  const classified = redirects.map((r) => ({ ...r, kind: classifyRedirectOp(r.op) }));
-  const truncating = classified.find((r) => r.kind === 'truncate' && !isNonFileSink(r.target));
-  if (truncating) {
-    return { verdict: 'DESTRUCTION', verb: truncating.op, target: truncating.target, conditional: false };
-  }
-  const fdOutOfScope = classified.find((r) => r.kind === 'fd-out-of-scope');
-
-  if (words.length === 0) {
-    if (fdOutOfScope) return { verdict: 'OUT_OF_SCOPE', reason: `redirect ${fdOutOfScope.op} not judged` };
-    return { verdict: 'NO_MATCH' };
-  }
-
-  const first = words[0].value;
-  if (first === '{' || first.startsWith('(') || first.startsWith('$(') || first.startsWith('`')) {
-    return { verdict: 'OUT_OF_SCOPE', reason: 'subshell/group/command-substitution not inspected' };
-  }
-
-  const resolved = resolveVerb(words);
-  if (!resolved) return { verdict: 'NO_MATCH' };
-  if (resolved.gaveUp) {
-    return remainderHasListedVerb(resolved.remainder)
-      ? { verdict: 'OUT_OF_SCOPE', reason: 'prefix chain not fully resolved; a listed verb may be present' }
-      : { verdict: 'NO_MATCH' };
-  }
-  const verb = resolved.base;
-  const verbLower = resolved.baseLower;
-  const args = words.slice(resolved.index + 1);
-
+// Every check that decides what a resolved verb word MEANS, extracted so
+// the same precise logic (git's own subcommand check included) applies
+// whether the verb was found as the walk's PRIMARY candidate or reached
+// directly (no prefix chain at all).
+function classifyVerb(verb, verbLower, args, heredoc, fdOutOfScope) {
   if (DESTRUCTION_VERBS.has(verbLower)) {
     return analyzeDestructionVerb(verbLower, args);
   }
@@ -511,6 +467,104 @@ function analyzeSegment(tokens) {
     return { verdict: 'OUT_OF_SCOPE', reason: 'script file invocation not inspected' };
   }
 
+  return { verdict: 'NO_MATCH' };
+}
+
+function verbAt(words, idx) {
+  const raw = words[idx].value;
+  const base = basenameOf(raw);
+  return { base, baseLower: stripExeExtension(base).toLowerCase() };
+}
+
+// Name-only check for a SECONDARY candidate (any candidate past the
+// first). Deliberately narrower than classifyVerb: it never re-runs
+// analyzeDestructionVerb/analyzeMv/git's subcommand logic on data that
+// might just be an earlier command's own argument (`cat rm` - `rm` is a
+// filename, not a command), so a secondary candidate can only ever admit
+// OUT_OF_SCOPE, never a false DESTRUCTION on nothing.
+function isSecondaryCandidateNamedVerb(words, idx) {
+  const { baseLower } = verbAt(words, idx);
+  return DESTRUCTION_VERBS.has(baseLower) || baseLower === 'mv' || NAMED_DESTROYER_VERBS.has(baseLower) || baseLower === 'git';
+}
+
+// --- one segment -------------------------------------------------------
+
+function analyzeSegment(tokens) {
+  let heredoc = false;
+  const words = [];
+  const redirects = [];
+
+  for (let idx = 0; idx < tokens.length; idx++) {
+    const t = tokens[idx];
+    if (t.type === 'op') {
+      if (t.value === '<<' || t.value === '<<-' || t.value === '<<<') { heredoc = true; continue; }
+      if (t.value === '<' || t.fdDup) continue;
+      const target = tokens[idx + 1];
+      if (!target || target.type !== 'word') {
+        return { verdict: 'OUT_OF_SCOPE', reason: `redirect ${t.value} has no target` };
+      }
+      redirects.push({ op: t.value, target: target.value });
+      idx++;
+      continue;
+    }
+    words.push(t);
+  }
+
+  const classified = redirects.map((r) => ({ ...r, kind: classifyRedirectOp(r.op) }));
+  const truncating = classified.find((r) => r.kind === 'truncate' && !isNonFileSink(r.target));
+  if (truncating) {
+    return { verdict: 'DESTRUCTION', verb: truncating.op, target: truncating.target, conditional: false };
+  }
+  const fdOutOfScope = classified.find((r) => r.kind === 'fd-out-of-scope');
+
+  if (words.length === 0) {
+    if (fdOutOfScope) return { verdict: 'OUT_OF_SCOPE', reason: `redirect ${fdOutOfScope.op} not judged` };
+    return { verdict: 'NO_MATCH' };
+  }
+
+  const first = words[0].value;
+  if (first === '{' || first.startsWith('(') || first.startsWith('$(') || first.startsWith('`')) {
+    return { verdict: 'OUT_OF_SCOPE', reason: 'subshell/group/command-substitution not inspected' };
+  }
+
+  const resolved = resolveVerb(words);
+  if (!resolved) return { verdict: 'NO_MATCH' };
+
+  if (!resolved.consumedPrefix) {
+    // word 0 is already the candidate - no ambiguity, no walk needed.
+    const { base, baseLower } = verbAt(words, resolved.index);
+    const args = words.slice(resolved.index + 1);
+    return classifyVerb(base, baseLower, args, heredoc, fdOutOfScope);
+  }
+
+  // A prefix chain was consumed. Per-tool flag knowledge, where it exists
+  // (sudo's), is an OPTIMIZATION that sharpens the walk's starting point;
+  // it is never required for correctness - the generic walk below finds a
+  // listed verb regardless of whether one exists for this prefix.
+  const candidateStart = resolved.lastPrefixVerb === 'sudo'
+    ? skipSudoFlags(words, resolved.index)
+    : resolved.index;
+  const candidates = walkCandidates(words, candidateStart);
+  if (candidates.length === 0) return { verdict: 'NO_MATCH' };
+
+  const [primaryIdx, ...secondaryIdx] = candidates;
+  const { base: primaryVerb, baseLower: primaryVerbLower } = verbAt(words, primaryIdx);
+  const primaryArgs = words.slice(primaryIdx + 1);
+  const primaryResult = classifyVerb(primaryVerb, primaryVerbLower, primaryArgs, heredoc, fdOutOfScope);
+  if (primaryResult.verdict !== 'NO_MATCH') return primaryResult;
+
+  // The walk keeps looking rather than returning: a mis-identified
+  // PRIMARY candidate (usually a flag's value we could not confirm takes
+  // one) must not silently end the search. Every later candidate is
+  // checked by NAME only (never re-run through classifyVerb - a name at
+  // this position may just as easily be an EARLIER command's own
+  // argument, `cat rm`, and a full re-classification there risks a false
+  // DESTRUCTION on nothing) and can only ever admit OUT_OF_SCOPE.
+  for (const idx of secondaryIdx) {
+    if (isSecondaryCandidateNamedVerb(words, idx)) {
+      return { verdict: 'OUT_OF_SCOPE', reason: 'a listed verb may be present past an unresolved prefix chain' };
+    }
+  }
   return { verdict: 'NO_MATCH' };
 }
 

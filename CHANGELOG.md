@@ -69,6 +69,28 @@ All notable changes to CoalGob are documented here. Format follows [Keep a Chang
   `sudo -H -u www-data git status` is `NO_MATCH`, not a blanket flag on any `git` invocation reached
   through a prefix chain.
 
+- **Defence round 1, Group A (dogfood wave 1 — a fresh out-of-frame attacker, given only the parser
+  and the published scope boundary, independently rediscovered the R3 CRITICAL across six more
+  spellings):** the give-up mechanism is replaced with a structural, generic candidate walk — never
+  a per-tool flag table. Every flag-shaped token (short, long, `=`-joined, clustered) and every
+  assignment is skipped; every other token is a candidate, in order, and the walk never returns early
+  because one token could not be classified. The first candidate gets full classification (can reach
+  `DESTRUCTION`, and gets a resolved verb's own precise logic — git's subcommand check included); if
+  that is `NO_MATCH`, every later candidate is checked by name only and can only ever admit
+  `OUT_OF_SCOPE` (never a false `DESTRUCTION` on data that might just be an earlier command's own
+  argument). `sudo`'s own flag table (now covering long forms too — `--user`, `--group`, `--prompt`,
+  `--chdir`, …) is kept as an OPTIMIZATION that sharpens the walk's starting point to full precision;
+  it no longer leaks onto `nice`/`time`/`command`/`timeout`'s remainders, the actual R3 mechanism.
+  Closes: `nice -n 10 rm`, `time -p rm`, `command -p rm`, `timeout --signal=KILL 5 rm`,
+  `timeout -k 5 10 rm`, `sudo --user root rm`, `nice --adjustment 10 rm`. Two pre-existing behaviors
+  are knowingly upgraded/traded as a direct result: `env FOO=bar rm x` now resolves to full
+  `DESTRUCTION` (the walk correctly skips the assignment as a non-candidate); `sudo -u root cat rm`
+  now admits `OUT_OF_SCOPE` rather than `NO_MATCH` (the same safe-direction trade-off R2's own ruling
+  pre-approved — `rm` here is `cat`'s filename argument, but the walk cannot always tell that from a
+  genuine command position without re-introducing the false-negative hole this fixes). Composition
+  axis added: a non-sudo prefix × a value-taking flag × the path/suffix resolver (`time -p
+  /bin/rm.exe`, `nice -n 10 /bin/rm.exe`) — the crossing no round before this one exercised.
+
 **Commit-subject note (reconciled, not rewritten — history is not amended for this):** `b4f018b`
 (round 4) and `276be0a` (round 5) carry a **byte-identical git subject line** — a copy-paste error at
 authoring time, caught after `276be0a` landed. `git log` alone cannot tell them apart; this CHANGELOG

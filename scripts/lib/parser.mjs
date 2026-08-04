@@ -639,7 +639,13 @@ function analyzeSegment(tokens) {
   if (truncating) {
     return { verdict: 'DESTRUCTION', verb: truncating.op, target: truncating.target, conditional: false };
   }
-  const fdOutOfScope = classified.find((r) => r.kind === 'fd-out-of-scope');
+  // A non-stdout fd redirect to a non-file sink (`2>/dev/null`) truncates
+  // nothing - the null-sink check applies to any fd, not only fd 1, so it
+  // must run here too rather than only inside the fd-1 truncating branch
+  // above. Otherwise the single most common redirect an agent writes is
+  // reported unjudged, inflating the ceiling metric with a construct this
+  // parser can in fact read.
+  const fdOutOfScope = classified.find((r) => r.kind === 'fd-out-of-scope' && !isNonFileSink(r.target));
 
   if (words.length === 0) {
     if (fdOutOfScope) return { verdict: 'OUT_OF_SCOPE', reason: `redirect ${fdOutOfScope.op} not judged`, kind: KIND_UNJUDGED };

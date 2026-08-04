@@ -1106,3 +1106,26 @@ test('a genuine [[ ]] test at segment start still gates > as a comparison (contr
 test('a genuine [[ ]] test after the if keyword still gates > as a comparison (control, D1 regression guard)', () => {
   assert.equal(verdictOf('if [[ $a > $b ]]; then echo hi; fi'), 'NO_MATCH');
 });
+
+// --- Group 38 (defence round 2, Group K) - the null-sink check must run
+// for ANY fd, not just fd 1. classifyRedirectOp routed every non-fd-1
+// redirect straight to fd-out-of-scope before isNonFileSink was ever
+// consulted, so the single most common redirect an agent writes
+// (`2>/dev/null`) was reported unjudged and fired the remedy - inflating
+// the unjudged ceiling metric with a construct the parser can in fact
+// read perfectly ---
+// ships-if-missing: `ls 2>/dev/null`, an everyday idiom, is flagged as a
+// construct the parser could not read, when it can read it exactly as
+// well as `ls > /dev/null` already reads on fd 1.
+test('2>/dev/null is not unjudged - the null sink is recognized on a non-stdout fd', () => {
+  assert.equal(verdictOf('ls 2>/dev/null'), 'NO_MATCH');
+});
+
+test('3>/dev/null (an arbitrary fd) is also recognized as a null sink', () => {
+  assert.equal(verdictOf('cmd 3>/dev/null'), 'NO_MATCH');
+});
+
+test('2> to a real file is still unjudged (control, M1 ruling unaffected)', () => {
+  assert.equal(verdictOf('cmd 2> important-file'), 'OUT_OF_SCOPE');
+  assert.equal(kindOf('cmd 2> important-file'), 'unjudged');
+});

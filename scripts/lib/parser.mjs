@@ -57,6 +57,11 @@ import { posix } from 'node:path';
 
 const SEGMENT_SEPARATORS = new Set([';', '&&', '||', '|', '&', '\n']);
 
+// Reserved words that legally precede a `[[ ... ]]` test in bash grammar -
+// `[[` is a keyword recognized only in COMMAND POSITION, never as a
+// quoted or bare argument to a preceding word.
+const BRACKET_TEST_PRECEDERS = new Set(['if', 'while', 'until', 'do', 'then', 'else', 'elif', '!']);
+
 // Partition of every OUT_OF_SCOPE site, set explicitly at each return - never
 // re-derived from the `reason` prose (a prose grouping mis-files the next
 // reason string somebody adds, silently). 'declared' = the owner's own scope
@@ -179,6 +184,16 @@ function isNonFileSink(target) {
 }
 
 // --- tokenizer -----------------------------------------------------------
+
+// Is the token about to be pushed in bash COMMAND POSITION - segment start,
+// or right after a keyword that can open a compound command? A `[[` here
+// opens a test; a `[[` anywhere else is data (an argument, quoted or not).
+function isCommandPosition(tokens) {
+  const prev = tokens[tokens.length - 1];
+  if (!prev) return true;
+  if (prev.type === 'op' && SEGMENT_SEPARATORS.has(prev.value)) return true;
+  return prev.type === 'word' && BRACKET_TEST_PRECEDERS.has(prev.value);
+}
 
 function tokenize(input) {
   const tokens = [];
@@ -335,8 +350,9 @@ function tokenize(input) {
     }
     if (brokeOnError && value === '' && i === startI + 1) continue;
     if (i > startI || value !== '') {
+      const opensTest = value === '[[' && isCommandPosition(tokens);
       tokens.push({ type: 'word', value, end: i });
-      if (value === '[[') bracketDepth++;
+      if (opensTest) bracketDepth++;
       else if (value === ']]' && bracketDepth > 0) bracketDepth--;
     }
   }

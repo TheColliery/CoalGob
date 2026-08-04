@@ -1075,3 +1075,34 @@ test('a lexically-normalized /dev/../dev/null is recognized as the null sink', (
 test('a genuinely different target that merely resembles the sink spelling is still a destruction (control)', () => {
   assert.equal(verdictOf('cat a > /dev/./nullfile'), 'DESTRUCTION');
 });
+
+// --- Group 37 (defence round 2, Group H) - bracketDepth poisoning: `[[`
+// only opens a test in real bash COMMAND POSITION (segment start, or right
+// after if/while/until/do/then/else/elif/!) - never as a quoted or bare
+// ARGUMENT to a preceding word. The old check fired on any token whose
+// VALUE was exactly `[[`, after quote-stripping and with no regard to
+// position, so a quoted or argument `[[` opened a test that never closed -
+// every `>` after it then read as an inert word instead of a redirect ---
+// ships-if-missing: this is the D1 fix's own blast radius - the false-
+// positive fix for `[[ $a > $b ]]` opened a false-negative hole that makes
+// an ordinary truncating redirect invisible whenever a `[[` appears
+// anywhere earlier in the same command line, quoted or not.
+test('a quoted [[ as an argument does not poison bracketDepth (real redirect stays live)', () => {
+  assert.equal(verdictOf('echo "[[" > out.txt'), 'DESTRUCTION');
+});
+
+test('a bare [[ as an argument (not word 0) does not poison bracketDepth either', () => {
+  assert.equal(verdictOf('echo [[ > out.txt'), 'DESTRUCTION');
+});
+
+test('a quoted [[ inside a grep pattern does not poison bracketDepth (realistic shape)', () => {
+  assert.equal(verdictOf('grep "[[" f > out.txt'), 'DESTRUCTION');
+});
+
+test('a genuine [[ ]] test at segment start still gates > as a comparison (control, D1 regression guard)', () => {
+  assert.equal(verdictOf('[[ $a > $b ]]'), 'NO_MATCH');
+});
+
+test('a genuine [[ ]] test after the if keyword still gates > as a comparison (control, D1 regression guard)', () => {
+  assert.equal(verdictOf('if [[ $a > $b ]]; then echo hi; fi'), 'NO_MATCH');
+});

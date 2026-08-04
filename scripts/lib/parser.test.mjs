@@ -146,6 +146,69 @@ function kindOf(cmd) {
 // total, not six. Axis 8 (BEHAVIOUR EQUIVALENCE) was accepted separately,
 // the same dispatch, as a genuinely distinct question axis 1-7 cannot ask -
 // EIGHT total as of defence round 7's fix wave.
+//
+// OUTPUT COVERAGE (defence round 8, the ALL-OUTPUTS re-check) - every axis
+// above was derived and enumerated against the VERDICT output alone. A
+// second output this parser emits, per finding - `verb`, `target`,
+// `conditional`, `reason`, `kind` - was never separately asked "does this
+// axis apply here too?" TARGET-CORRECTNESS (X1/X2, Set X1+X2+X3) is the
+// proof: axis 1 (spelling) and axis 7 (SITE) were both already CLOSED for
+// the verdict, and both still had a live defect in the TARGET a right
+// verdict carried. Per-axis state, verdict column omitted (that is every
+// prior group in this file):
+//   1 SPELLING      - target: PARTIAL (W2's own -t/--target-directory fix
+//                     IS a target fix, but X1/X2 found the same axis still
+//                     open on the flagless/`--`-shadowed forms). verb/
+//                     conditional/reason/kind: UNCHECKED.
+//   2 VALUE-FORM     - every output: UNCHECKED (T5/U5's -WhatIf/-Force
+//                     value-form fixes were verdict-only; no PowerShell
+//                     switch's colon-form has ever been checked against
+//                     what `target`/`conditional` report).
+//   3 OVERRIDE ORDER - every output: UNCHECKED.
+//   4 PLATFORM       - every output: UNCHECKED (U2/W5's del/rmdir/.cmd
+//                     fixes are verdict-only; none of these verbs ever
+//                     reaches a `target` field at all - see the SITE row).
+//   5 STRUCTURAL CONTEXT - target: FIXED (X2, `--` before
+//                     `--target-directory=`). verb/conditional/reason/
+//                     kind: UNCHECKED.
+//   6 INVOCATION CHANNEL - target: the pipeline-bound Remove-Item shape
+//                     (W6) never reaches `target` either - see the SITE
+//                     row, same root cause. conditional/reason/kind:
+//                     UNCHECKED.
+//   7 SITE           - target: FIXED (X1, mv's 3+-operand implicit-
+//                     directory form) - AND STILL OPEN, more broadly than
+//                     this round closed: `analyzeDestructionVerb`
+//                     (rm/rmdir/unlink/truncate/del/remove-item - the
+//                     MAJORITY of this parser's guarded verb list) never
+//                     populates `target` AT ALL, for any input - its own
+//                     positional-scan loop sets a boolean (`hasPositional`)
+//                     and discards the token, where `analyzeMv`/
+//                     `analyzeMoveItem`/the redirect-classification path
+//                     all capture and report the real operand. This is the
+//                     single largest EMPTY cell this re-check found, and it
+//                     is left OPEN (not fixed this round) - the owner has
+//                     ruled a block always hands back the recoverable form
+//                     of the SAME destruction, and `target`'s current
+//                     shape (one string, one file) does not obviously
+//                     generalize to a verb whose real grammar is
+//                     `FILE...` (one or more operands, `rm a b` deletes
+//                     BOTH) - a schema decision (singular `target` vs a
+//                     `targets` list), not a citation gap, and therefore a
+//                     head ruling, not a coder-decided fix. verb: the
+//                     redirect-truncate DESTRUCTION shape reports
+//                     `verb: truncating.op` (a redirect operator string
+//                     like `1>`/`&>`) where every other DESTRUCTION shape
+//                     reports a real command/cmdlet name - one field name,
+//                     two incompatible meanings, never enumerated, same
+//                     open schema question as the `target` gap above.
+//   8 BEHAVIOUR EQUIVALENCE - every output: UNCHECKED beyond verdict (no
+//                     wave has hit this axis at all yet, per the round-7
+//                     handover).
+// conditional and reason/kind were spot-checked this round (Set X3) only
+// for the two DESTRUCTION shapes already in play (mv/Move-Item vs a
+// listed verb/redirect) - not crossed against any of the eight axes
+// individually. Reading this table literally: MOST cells are empty, and
+// that is the finding, not a gap in the finding.
 // =============================================================================
 
 // --- Group 1: false positives (a quoted argument is not a command) ---

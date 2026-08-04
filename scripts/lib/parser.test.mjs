@@ -10,25 +10,25 @@ function verdictOf(cmd) {
 // ships-if-missing: any destructive-looking substring anywhere in a command's
 // text blocks the command, even when it never runs as a command.
 test('quoted destructive phrase inside an argument is NOT a destruction', () => {
-  assert.equal(verdictOf('echo "rm -rf /"'), 'NONE');
+  assert.equal(verdictOf('echo "rm -rf /"'), 'NO_MATCH');
 });
 
 test("single-quoted destructive phrase inside an argument is NOT a destruction", () => {
-  assert.equal(verdictOf("echo 'rm -rf /'"), 'NONE');
+  assert.equal(verdictOf("echo 'rm -rf /'"), 'NO_MATCH');
 });
 
 // --- Group 2: >> is append, never truncation ---
 // ships-if-missing: every ordinary log-append command gets blocked as a delete.
 test('>> append is not treated as truncation', () => {
-  assert.equal(verdictOf('echo hi >> log.txt'), 'NONE');
+  assert.equal(verdictOf('echo hi >> log.txt'), 'NO_MATCH');
 });
 
 test('2>> stderr-append is not treated as truncation', () => {
-  assert.equal(verdictOf('cmd 2>> err.log'), 'NONE');
+  assert.equal(verdictOf('cmd 2>> err.log'), 'NO_MATCH');
 });
 
 test('&>> combined-append is not treated as truncation', () => {
-  assert.equal(verdictOf('cmd &>> both.log'), 'NONE');
+  assert.equal(verdictOf('cmd &>> both.log'), 'NO_MATCH');
 });
 
 // --- Group 3: wrappers that could destroy report OUT_OF_SCOPE, never a silent NONE ---
@@ -55,7 +55,7 @@ test('find -exec is OUT_OF_SCOPE', () => {
 });
 
 test('find without -exec is NOT flagged OUT_OF_SCOPE by find alone', () => {
-  assert.equal(verdictOf('find . -name "*.tmp"'), 'NONE');
+  assert.equal(verdictOf('find . -name "*.tmp"'), 'NO_MATCH');
 });
 
 test('node -e one-liner is OUT_OF_SCOPE', () => {
@@ -180,8 +180,12 @@ test('2> stderr-truncate is OUT_OF_SCOPE, not NONE', () => {
   assert.equal(verdictOf('cmd 2> important-file'), 'OUT_OF_SCOPE');
 });
 
-test('&> combined-truncate is OUT_OF_SCOPE, not NONE', () => {
-  assert.equal(verdictOf('cmd &> important-file'), 'OUT_OF_SCOPE');
+test('&> combined-redirect truncates its target exactly like > (M2 fix corrected this pin)', () => {
+  // &> is bash shorthand for `>file 2>&1` - it genuinely truncates the
+  // target file. The pre-fix classifier's `startsWith('1')` prefix-match
+  // accidentally routed it to fd-out-of-scope (no digit prefix at all);
+  // the M2 exact-match fix makes this a real DESTRUCTION, correctly.
+  assert.equal(verdictOf('cmd &> important-file'), 'DESTRUCTION');
 });
 
 // --- Group 10: the in-scope verb list, all eight, both cases ---
@@ -222,28 +226,266 @@ test('Remove-Item is a destruction case-insensitively', () => {
 // ships-if-missing: the guard over-widens past its declared scope and starts
 // blocking ordinary safe commands ("a mine is still a mine").
 test('ls is NONE', () => {
-  assert.equal(verdictOf('ls -la'), 'NONE');
+  assert.equal(verdictOf('ls -la'), 'NO_MATCH');
 });
 
 test('cat is NONE', () => {
-  assert.equal(verdictOf('cat file.txt'), 'NONE');
+  assert.equal(verdictOf('cat file.txt'), 'NO_MATCH');
 });
 
 test('git status is NONE', () => {
-  assert.equal(verdictOf('git status'), 'NONE');
+  assert.equal(verdictOf('git status'), 'NO_MATCH');
 });
 
 test('cp is NONE (copy is not in scope)', () => {
-  assert.equal(verdictOf('cp a b'), 'NONE');
+  assert.equal(verdictOf('cp a b'), 'NO_MATCH');
 });
 
 // --- Group 12: quoting/segmentation robustness ---
 // ships-if-missing: a filename containing a shell metacharacter (';', '&&')
 // is misparsed as two separate commands, producing a wrong verdict.
 test('a semicolon inside a quoted filename does not create a fake segment', () => {
-  assert.equal(verdictOf('touch "a;b"'), 'NONE');
+  assert.equal(verdictOf('touch "a;b"'), 'NO_MATCH');
 });
 
 test('an && inside a quoted argument does not create a fake segment', () => {
-  assert.equal(verdictOf('echo "a && b"'), 'NONE');
+  assert.equal(verdictOf('echo "a && b"'), 'NO_MATCH');
+});
+
+// --- Group 13 (C1) - `&` is a statement separator, not a redirect ---
+// ships-if-missing: a listed destruction verb after `&` is erased from the
+// token stream entirely and the whole command reports NO_MATCH/NONE - the
+// worst outcome the parser can produce, on its own primary verb list.
+test('a destructive verb after a background & is caught', () => {
+  assert.equal(verdictOf('echo hi & rm -rf /tmp/x'), 'DESTRUCTION');
+});
+
+test('a destructive verb after & with no other segment is caught', () => {
+  assert.equal(verdictOf('true & rm x'), 'DESTRUCTION');
+});
+
+test('a destructive verb between two & separators is caught', () => {
+  assert.equal(verdictOf('a & rm x & b'), 'DESTRUCTION');
+});
+
+test('an OUT_OF_SCOPE wrapper after & is caught, not erased', () => {
+  assert.equal(verdictOf('ls & make clean'), 'OUT_OF_SCOPE');
+});
+
+// --- Group 14 (H1) - a redirect to a non-file sink is not a destruction ---
+// ships-if-missing: `> /dev/null`, one of the most common shell idioms,
+// blocks as if it deleted a real file - and the design's own block-with-
+// remedy rail would hand back a "recoverable form" for a destruction that
+// never happened.
+test('> /dev/null is not a destruction', () => {
+  assert.equal(verdictOf('ls > /dev/null'), 'NO_MATCH');
+});
+
+test('> NUL (Windows null device, any case) is not a destruction', () => {
+  assert.equal(verdictOf('echo hi > NUL'), 'NO_MATCH');
+  assert.equal(verdictOf('echo hi > nul'), 'NO_MATCH');
+});
+
+test('> /dev/fd/N and > /proc/self/fd/N are not a destruction', () => {
+  assert.equal(verdictOf('ls > /dev/fd/1'), 'NO_MATCH');
+  assert.equal(verdictOf('ls > /proc/self/fd/2'), 'NO_MATCH');
+});
+
+test('redirecting to a real file is still a destruction (control)', () => {
+  assert.equal(verdictOf('ls > important.log'), 'DESTRUCTION');
+});
+
+// --- Group 15 (H2) - NO_MATCH is a closed-list miss, never a safety claim ---
+// ships-if-missing: the fall-through value reads as "judged safe" when it
+// only means "position 0 didn't match this parser's lookup tables" - eval,
+// every subshell/substitution form, and named direct destroyers all land
+// here and the parser has no way to say it never looked.
+test('git clean is OUT_OF_SCOPE', () => {
+  assert.equal(verdictOf('git clean -fdx'), 'OUT_OF_SCOPE');
+});
+
+test('git rm is OUT_OF_SCOPE', () => {
+  assert.equal(verdictOf('git rm file'), 'OUT_OF_SCOPE');
+});
+
+test('git checkout -- <file> is OUT_OF_SCOPE', () => {
+  assert.equal(verdictOf('git checkout -- file'), 'OUT_OF_SCOPE');
+});
+
+test('git status (not a destructive subcommand) stays NO_MATCH', () => {
+  assert.equal(verdictOf('git status'), 'NO_MATCH');
+});
+
+test('npm ci is OUT_OF_SCOPE', () => {
+  assert.equal(verdictOf('npm ci'), 'OUT_OF_SCOPE');
+});
+
+test('shred is OUT_OF_SCOPE', () => {
+  assert.equal(verdictOf('shred -u f'), 'OUT_OF_SCOPE');
+});
+
+test('dd is OUT_OF_SCOPE', () => {
+  assert.equal(verdictOf('dd if=/dev/zero of=f'), 'OUT_OF_SCOPE');
+});
+
+test('eval is OUT_OF_SCOPE', () => {
+  assert.equal(verdictOf('eval "rm -rf /"'), 'OUT_OF_SCOPE');
+});
+
+test('a subshell is OUT_OF_SCOPE', () => {
+  assert.equal(verdictOf('(rm -rf /tmp/x)'), 'OUT_OF_SCOPE');
+});
+
+test('a brace group is OUT_OF_SCOPE', () => {
+  assert.equal(verdictOf('{ rm -rf /tmp/x; }'), 'OUT_OF_SCOPE');
+});
+
+test('$(...) command substitution as the whole command is OUT_OF_SCOPE', () => {
+  assert.equal(verdictOf('$(rm -rf /tmp/x)'), 'OUT_OF_SCOPE');
+});
+
+test('backtick command substitution as the whole command is OUT_OF_SCOPE', () => {
+  assert.equal(verdictOf('`rm -rf /tmp/x`'), 'OUT_OF_SCOPE');
+});
+
+test('npx rimraf is OUT_OF_SCOPE', () => {
+  assert.equal(verdictOf('npx rimraf x'), 'OUT_OF_SCOPE');
+});
+
+test('npm exec rimraf is OUT_OF_SCOPE', () => {
+  assert.equal(verdictOf('npm exec rimraf x'), 'OUT_OF_SCOPE');
+});
+
+test('find . -delete is OUT_OF_SCOPE (deletes with no helper verb)', () => {
+  assert.equal(verdictOf('find . -delete'), 'OUT_OF_SCOPE');
+});
+
+test('find . -execdir is OUT_OF_SCOPE', () => {
+  assert.equal(verdictOf('find . -execdir rm {} \\;'), 'OUT_OF_SCOPE');
+});
+
+test('a genuinely unlisted, non-destructive verb stays NO_MATCH (no over-widening)', () => {
+  assert.equal(verdictOf('ls -la'), 'NO_MATCH');
+  assert.equal(verdictOf('cat file.txt'), 'NO_MATCH');
+});
+
+// --- Group 16 (H4) - the verb can be prefixed; recognition must see through it ---
+// ships-if-missing: `sudo rm -rf /` - the single most recognisable
+// destructive command line there is - reports NO_MATCH because the parser
+// only ever looks at word 0.
+test('sudo rm is a destruction', () => {
+  assert.equal(verdictOf('sudo rm -rf /tmp/x'), 'DESTRUCTION');
+});
+
+test('env-prefixed rm is a destruction', () => {
+  assert.equal(verdictOf('env rm x'), 'DESTRUCTION');
+});
+
+test('nice-prefixed rm is a destruction', () => {
+  assert.equal(verdictOf('nice rm x'), 'DESTRUCTION');
+});
+
+test('time-prefixed rm is a destruction', () => {
+  assert.equal(verdictOf('time rm x'), 'DESTRUCTION');
+});
+
+test('command-prefixed rm is a destruction', () => {
+  assert.equal(verdictOf('command rm x'), 'DESTRUCTION');
+});
+
+test('timeout N rm is a destruction, skipping the duration arg', () => {
+  assert.equal(verdictOf('timeout 5 rm x'), 'DESTRUCTION');
+});
+
+test('an absolute path to rm is a destruction (basename match)', () => {
+  assert.equal(verdictOf('/bin/rm -rf /tmp/x'), 'DESTRUCTION');
+  assert.equal(verdictOf('/usr/bin/rm x'), 'DESTRUCTION');
+});
+
+test('a leading VAR=value assignment does not hide the verb', () => {
+  assert.equal(verdictOf('FOO=bar rm x'), 'DESTRUCTION');
+});
+
+// --- Group 17 (M1) - fd-duplication and fd-closing are not redirects to a file ---
+// ships-if-missing: `2>&1`, the most-typed redirection in existence, falls
+// into the undecided OUT_OF_SCOPE bucket instead of being recognised as
+// what it is - a descriptor operation with no filename target at all.
+test('2>&1 fd-duplication names no file', () => {
+  assert.equal(verdictOf('cmd 2>&1'), 'NO_MATCH');
+});
+
+test('>&- fd-close names no file', () => {
+  assert.equal(verdictOf('cmd >&-'), 'NO_MATCH');
+});
+
+test('2>&- fd-close names no file', () => {
+  assert.equal(verdictOf('cmd 2>&-'), 'NO_MATCH');
+});
+
+test('a trailing background & with nothing after it is not a bad redirect', () => {
+  assert.equal(verdictOf('sleep 1 &'), 'NO_MATCH');
+});
+
+// --- Group 18 (M2) - fd classification is exact-match, not prefix-match ---
+// ships-if-missing: `10>`, `11>`, ... all classify as fd 1 (stdout) because
+// a startsWith('1') check catches every fd number that begins with the
+// digit 1, silently claiming stdout semantics for a descriptor that is not
+// stdout.
+test('fd 10 is not classified as stdout', () => {
+  const result = parseCommand('cmd 10> log');
+  assert.notEqual(result.verdict, 'DESTRUCTION');
+});
+
+test('fd 1 (bare) is still classified as stdout truncation', () => {
+  assert.equal(verdictOf('cmd 1> log'), 'DESTRUCTION');
+});
+
+// --- Group 19 (M3) - a heredoc ends its own segment ---
+// ships-if-missing: the command immediately after a closed heredoc is
+// silently folded into the heredoc's own (always OUT_OF_SCOPE) segment, so
+// a listed `rm` right after a heredoc is downgraded from DESTRUCTION.
+test('a destructive command right after a closed heredoc is still caught', () => {
+  assert.equal(verdictOf('cat <<EOF\nhello\nEOF\nrm -rf /tmp/x'), 'DESTRUCTION');
+});
+
+// --- Group 20 (M4) - Windows-family flags fold case; POSIX flags do not ---
+// ships-if-missing: `powershell -command` (lowercase) or `pwsh -C`
+// (abbreviated) is invisible to the one-liner check because PowerShell and
+// cmd parameters are genuinely case-insensitive and abbreviable, while the
+// check compares raw case.
+test('powershell -Command is OUT_OF_SCOPE regardless of case', () => {
+  assert.equal(verdictOf('powershell -Command "rm x"'), 'OUT_OF_SCOPE');
+  assert.equal(verdictOf('powershell -command "rm x"'), 'OUT_OF_SCOPE');
+});
+
+test('pwsh -C (abbreviated, case-insensitive) is OUT_OF_SCOPE', () => {
+  assert.equal(verdictOf('pwsh -C "rm x"'), 'OUT_OF_SCOPE');
+});
+
+test('cmd /c is OUT_OF_SCOPE regardless of case', () => {
+  assert.equal(verdictOf('cmd /c "del x"'), 'OUT_OF_SCOPE');
+  assert.equal(verdictOf('cmd /C "del x"'), 'OUT_OF_SCOPE');
+});
+
+// --- Group 21 (L1) - --help/--version on a destruction verb is pure output ---
+// ships-if-missing: `rm --help` blocks as if it deletes something; it prints
+// usage text and exits.
+test('rm --help is not a destruction', () => {
+  assert.equal(verdictOf('rm --help'), 'NO_MATCH');
+});
+
+test('rm --version is not a destruction', () => {
+  assert.equal(verdictOf('rm --version'), 'NO_MATCH');
+});
+
+// --- Group 22 (L2) - truncate -s +N is an explicit grow, never a shrink ---
+// ships-if-missing: a provably-safe grow (the + prefix guarantees the file
+// cannot shrink, regardless of its current size) is blocked identically to
+// an actual truncate-to-zero.
+test('truncate -s +100 (explicit grow) is not a destruction', () => {
+  assert.equal(verdictOf('truncate -s +100 f'), 'NO_MATCH');
+});
+
+test('truncate -s 0 (shrink to zero) is still a destruction', () => {
+  assert.equal(verdictOf('truncate -s 0 f'), 'DESTRUCTION');
 });

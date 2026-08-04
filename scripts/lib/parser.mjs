@@ -191,8 +191,12 @@ const SCRIPT_EXTENSION = /\.(sh|ps1|py|pl|rb)$/i;
 
 const NULL_SINKS = new Set([
   '/dev/null', '/dev/zero', '/dev/full', '/dev/tty', '/dev/stdout', '/dev/stderr',
+  '/dev/random', '/dev/urandom', '/dev/console',
 ]);
 const FD_SINK_RE = /^\/(dev\/fd|proc\/self\/fd)\/\d+$/;
+// A numbered tty (/dev/ttyN) or pseudo-terminal (/dev/pts/N) - a character
+// device, never a file; a redirect to one truncates nothing.
+const TTY_SINK_RE = /^\/dev\/(tty|pts\/)\d+$/;
 const WINDOWS_UNC_NUL_PREFIX = '\\\\.\\';
 
 function isNonFileSink(target) {
@@ -202,6 +206,7 @@ function isNonFileSink(target) {
   const normalized = posix.normalize(target);
   if (NULL_SINKS.has(normalized)) return true;
   if (FD_SINK_RE.test(normalized)) return true;
+  if (TTY_SINK_RE.test(normalized)) return true;
   const stripped = target.startsWith(WINDOWS_UNC_NUL_PREFIX) ? target.slice(WINDOWS_UNC_NUL_PREFIX.length) : target;
   return stripped.toLowerCase() === 'nul';
 }
@@ -455,6 +460,12 @@ function resolveVerb(words) {
 // --- mv (ruling 3: conditional on the runtime existence of its target) -----
 
 function analyzeMv(args) {
+  if (args.some((w) => w.value === '-n' || w.value === '--no-clobber')) {
+    // -n/--no-clobber guarantees mv never overwrites an existing target -
+    // the one mv shape provably safe without a runtime stat, the same
+    // class of exemption truncate's grow already gets.
+    return { verdict: 'NO_MATCH' };
+  }
   const tIdx = args.findIndex((w) => w.value === '-t');
   if (tIdx !== -1 && args[tIdx + 1]) {
     return { verdict: 'DESTRUCTION', verb: 'mv', target: args[tIdx + 1].value, conditional: true };

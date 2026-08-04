@@ -1229,3 +1229,47 @@ test('Remove-Item -Whati (unambiguous abbreviation) is still the dry-run switch'
 test('Remove-Item -W alone (too ambiguous to resolve) is not exempted (control)', () => {
   assert.equal(verdictOf('Remove-Item -W x'), 'DESTRUCTION');
 });
+
+// --- Group 41 (defence round 2, Group J) - provable safety without a
+// stat, the same class of exemption truncate's grow already gets ---
+
+// J1 - mv -n/--no-clobber guarantees mv never overwrites an existing
+// target - the one mv shape provably safe with no filesystem access.
+test('mv -n (no-clobber, short form) is not a destruction', () => {
+  assert.equal(verdictOf('mv -n a b'), 'NO_MATCH');
+});
+
+test('mv --no-clobber (long form) is not a destruction', () => {
+  assert.equal(verdictOf('mv --no-clobber a b'), 'NO_MATCH');
+});
+
+test('mv a b with no -n is still a destruction (control)', () => {
+  assert.equal(verdictOf('mv a b'), 'DESTRUCTION');
+});
+
+// J2 - NULL_SINKS generalized to every non-file character device, not
+// just the original 6-entry list - a redirect to any of these truncates
+// nothing, lexically, no stat.
+test('> /dev/urandom is not a destruction (character device)', () => {
+  assert.equal(verdictOf('echo hi > /dev/urandom'), 'NO_MATCH');
+});
+
+test('> /dev/random is not a destruction (character device)', () => {
+  assert.equal(verdictOf('echo hi > /dev/random'), 'NO_MATCH');
+});
+
+test('> /dev/console is not a destruction (character device)', () => {
+  assert.equal(verdictOf('echo hi > /dev/console'), 'NO_MATCH');
+});
+
+test('> /dev/ttyN (a numbered tty) is not a destruction', () => {
+  assert.equal(verdictOf('echo hi > /dev/tty5'), 'NO_MATCH');
+});
+
+test('> /dev/pts/N (a pseudo-terminal) is not a destruction', () => {
+  assert.equal(verdictOf('echo hi > /dev/pts/3'), 'NO_MATCH');
+});
+
+test('> a genuinely different /dev path is still a destruction (control)', () => {
+  assert.equal(verdictOf('echo hi > /dev/mydata'), 'DESTRUCTION');
+});

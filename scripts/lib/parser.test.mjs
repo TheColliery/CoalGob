@@ -1935,6 +1935,29 @@ const EVERY_LISTED_VERB = [
   'git', 'npx', 'cmd',
 ];
 
+// --- Group 66 (defence round 6, Set V2) - AXIS: sibling spelling
+// (path-qualified / .exe-suffixed), applied to the PREFIX word instead
+// of the candidate verb. `verbAt` already normalizes every CANDIDATE
+// verb with `basenameOf` + `stripExeExtension` before matching; the
+// prefix-chain walk in `resolveVerb` compared the RAW token instead -
+// one rule, applied at one site and not the other ---
+// ships-if-missing: `/usr/bin/time rm -rf build` really runs `rm -rf
+// build` (unqualified `time rm -rf build` is correctly DESTRUCTION),
+// but the path-qualified prefix defeats the whole chain and is
+// silently NO_MATCH.
+test('the whole path-qualified / .exe-suffixed prefix set resolves correctly', () => {
+  const cases = [
+    ['/usr/bin/time rm -rf build', 'DESTRUCTION'],
+    ['/usr/bin/sudo rm -rf build', 'DESTRUCTION'],
+    ['sudo.exe rm -rf build', 'DESTRUCTION'],
+    ['/bin/nice -n 10 rm -rf build', 'OUT_OF_SCOPE'],
+    ['time rm -rf build', 'DESTRUCTION'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});
+
 test('no listed verb throws when invoked bare or with flags only', () => {
   for (const verb of EVERY_LISTED_VERB) {
     for (const cmd of [verb, `${verb} -f`, `${verb} --flag`]) {

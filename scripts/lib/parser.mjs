@@ -552,7 +552,12 @@ function resolveVerb(words) {
   let consumedPrefix = idx > 0;
   let lastPrefixVerb = null;
   while (idx < words.length) {
-    const wLower = words[idx].value.toLowerCase();
+    // Normalized the SAME way `verbAt` already normalizes every
+    // CANDIDATE verb (basenameOf + stripExeExtension) - a path-
+    // qualified (`/usr/bin/time`) or `.exe`-suffixed (`sudo.exe`)
+    // prefix is the ordinary way a script pins a binary, and before
+    // this fix it defeated the WHOLE prefix chain, not just precision.
+    const wLower = stripExeExtension(basenameOf(words[idx].value)).toLowerCase();
     if (wLower === TIMEOUT_VERB) {
       idx++;
       if (idx < words.length && DURATION_RE.test(words[idx].value)) idx++;

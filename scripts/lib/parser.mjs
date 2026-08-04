@@ -602,6 +602,30 @@ function resolveVerb(words) {
       consumedPrefix = true;
       continue;
     }
+    if (wLower === 'for') {
+      // bash's C-style for-loop may omit the `;` before `do` (AXIS 5,
+      // structural context / separator-elision - CITED, verified live
+      // on this host's bash this round: `for ((i=0;i<2;i++)) do echo
+      // hi; done` runs; the plain-list form `while true do ... done`,
+      // with no `))`/`]]` header immediately before `do`, is a syntax
+      // error - the free pass is keyed to the CLOSING TOKEN, not to
+      // `for` specially). `for` is not itself skippable one token at a
+      // time the way if/while/until/do are - its own next tokens are a
+      // loop variable or `((`, never the command - so this scans
+      // FORWARD for the segment's own `do` and resumes the walk
+      // immediately after it. No match: fall through unresolved, same
+      // as any other unrecognized word (the `for x in a b; do ...`
+      // canonical form already works via ordinary segmentation - the
+      // `;` there is a real separator, so `do` starts its OWN segment
+      // and never reaches this branch at all).
+      const doIdx = words.findIndex((w, i) => i > idx && !w.quoted && w.value.toLowerCase() === 'do');
+      if (doIdx !== -1) {
+        idx = doIdx + 1;
+        consumedPrefix = true;
+        continue;
+      }
+      break;
+    }
     break;
   }
   if (idx >= words.length) return null;

@@ -2200,6 +2200,39 @@ test('parseCommand never throws - pathological and adversarial inputs', () => {
   }
 });
 
+// --- Group 70 (defence round 7, Set W1) - AXIS 5 (structural context,
+// separator-elision sub-case). `for (( ; ; ))` may omit the `;` before
+// `do` (CITED, verified live on this host's bash this dispatch:
+// `for ((i=0;i<2;i++)) do echo hi; done` runs; `while true do ...`
+// with NO `((`/`]]` header is a syntax error - the free pass is keyed
+// to the closing token, not to `for` specially). `while`/`until`/`if`
+// already degrade SAFELY to OUT_OF_SCOPE/unjudged in this shape
+// (they're already SHELL_KEYWORDS members, so the generic
+// secondary-candidate walk still finds a listed verb by name) - `for`
+// is not a SHELL_KEYWORDS member at all, so it took the DIRECT path
+// with no walk and produced a silent NO_MATCH, the worst of the three
+// outcomes. Fixed by giving `for` its OWN resolveVerb handling: scan
+// forward for the segment's own `do` and resume the walk immediately
+// after it, rather than a single-token skip (for's own next tokens
+// are a loop variable or `((`, never the command) ---
+// ships-if-missing: `for ((i=0;i<2;i++)) do rm x; done` deletes `x`
+// for real (a legal, working, destructive loop) while this parser
+// reports NO_MATCH - the loop body is never looked at.
+test('the whole for-loop separator-elision set resolves correctly', () => {
+  const cases = [
+    ['for ((i=0;i<2;i++)) do rm x; done', 'DESTRUCTION'],
+    ['for ((i=0;i<2;i++)); do rm x; done', 'DESTRUCTION'],
+    ['for ((i=0;i<2;i++)) do echo hi; done', 'NO_MATCH'],
+    ['for f in a b; do rm $f; done', 'DESTRUCTION'],
+    ['while (( i++ < 3 )) do rm x; done', 'OUT_OF_SCOPE'],
+    ['until (( i++ > 3 )) do rm x; done', 'OUT_OF_SCOPE'],
+    ['if (( 1 )) then rm x; fi', 'OUT_OF_SCOPE'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});
+
 test('no listed verb throws when invoked bare or with flags only', () => {
   for (const verb of EVERY_LISTED_VERB) {
     for (const cmd of [verb, `${verb} -f`, `${verb} --flag`]) {

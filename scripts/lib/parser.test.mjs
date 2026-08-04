@@ -1814,3 +1814,30 @@ test('the whole truncate SIZE-modifier set resolves correctly', () => {
     assert.equal(verdictOf(cmd), expected, cmd);
   }
 });
+
+// --- Group 56 (defence round 5, Set U2) - the no-op flag table must
+// match each verb's OWN switch grammar, not a borrowed GNU one. CITED
+// SOURCE: `del /?` and `rmdir /?`, both RUN live on this host - neither
+// cmd.exe builtin has a `--`-prefixed switch at all (del: "[/P] [/F]
+// [/S] [/Q] [/A[[:]attributes]]"; rmdir: "[/S] [/Q]"), so `--help`/
+// `--version` are ordinary filename patterns for them, not no-ops.
+// isWindowsSwitch was del-only although rmdir/rd share the exact same
+// `/`-prefixed grammar ---
+// ships-if-missing: `del --version important.txt` deletes the file
+// while being reported NO_MATCH as if it were a help invocation; and
+// `rmdir /?` (a genuine help call) is reported as a destruction.
+test('the whole cmd.exe no-op-flag set resolves correctly', () => {
+  const cases = [
+    ['del --version important.txt', 'DESTRUCTION'],
+    ['del --help important.txt', 'DESTRUCTION'],
+    ['del /? important.txt', 'NO_MATCH'],
+    ['rmdir /?', 'NO_MATCH'],
+    ['rmdir /s /q build', 'DESTRUCTION'],
+    ['rm --help', 'NO_MATCH'],
+    ['rm --version', 'NO_MATCH'],
+    ['truncate --help', 'NO_MATCH'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});

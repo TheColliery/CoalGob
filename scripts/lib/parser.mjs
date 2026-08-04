@@ -668,10 +668,13 @@ function isColonValueFlag(verbLower, value) {
 
 // A dry-run/help flag that means "destroys nothing", scoped to the one verb
 // each spelling actually belongs to - a Windows-only or PowerShell-only
-// switch has no meaning for the other listed verbs.
+// switch has no meaning for the other listed verbs. `--help`/`--version`
+// are GNU getopt convention and do NOT extend to the CMD_EXE_VERBS family
+// (del/rmdir have no `--` switches at all, cited above at CMD_EXE_VERBS) -
+// for them, only their own `/?` is a no-op.
 function isNoOpFlag(verbLower, value) {
+  if (CMD_EXE_VERBS.has(verbLower)) return value === '/?';
   if (value === '--help' || value === '--version') return true;
-  if (verbLower === 'del' && value === '/?') return true;
   if (verbLower === 'remove-item' && isRemoveItemWhatIf(value)) return true;
   return false;
 }
@@ -708,11 +711,15 @@ function truncateGrowSize(args) {
   return size;
 }
 
-// cmd.exe's del/erase synopsis (`del /?`, this host, live): "DEL [/P] [/F]
-// [/S] [/Q] [/A[[:]attributes]] names" - switches are `/`-prefixed, not
-// `-`, so D2's generic `-`-prefix flag check never recognized one.
+// cmd.exe builtins sharing one grammar: `/`-prefixed switches, NO `--`
+// GNU-style switches at all. CITED SOURCE, both RUN live on this host:
+// `del /?` -> "DEL [/P] [/F] [/S] [/Q] [/A[[:]attributes]] names";
+// `rmdir /?` -> "RMDIR [/S] [/Q] [drive:]path" / "RD [/S] [/Q] ...".
+// Axes: both listed verbs sharing the family, not just the one queried.
+const CMD_EXE_VERBS = new Set(['del', 'rmdir']);
+
 function isWindowsSwitch(verbLower, value) {
-  return verbLower === 'del' && /^\/[A-Za-z]/.test(value);
+  return CMD_EXE_VERBS.has(verbLower) && /^\/[A-Za-z]/.test(value);
 }
 
 // truncate's synopsis (`truncate --help`, this host, live): "Usage:

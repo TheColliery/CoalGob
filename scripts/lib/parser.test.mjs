@@ -2170,7 +2170,11 @@ test('the whole path-qualified / .exe-suffixed prefix set resolves correctly', (
     ['/usr/bin/time rm -rf build', 'DESTRUCTION'],
     ['/usr/bin/sudo rm -rf build', 'DESTRUCTION'],
     ['sudo.exe rm -rf build', 'DESTRUCTION'],
-    ['/bin/nice -n 10 rm -rf build', 'OUT_OF_SCOPE'],
+    // UPGRADED (wave 10, blind, Group 101): nice now has its own
+    // value-flag table, so a path-qualified `/bin/nice` reaches full
+    // DESTRUCTION the same way `/usr/bin/sudo` already did - this used
+    // to assert OUT_OF_SCOPE back when nice had no table of its own.
+    ['/bin/nice -n 10 rm -rf build', 'DESTRUCTION'],
     ['time rm -rf build', 'DESTRUCTION'],
   ];
   for (const [cmd, expected] of cases) {
@@ -3296,11 +3300,19 @@ test('a secondary candidate gets every OUT_OF_SCOPE admission a primary candidat
     const result = parseCommand(cmd);
     assert.equal(result.verdict, 'OUT_OF_SCOPE', cmd);
   }
-  // A real destruction verb reached the same way still downgrades to
-  // OUT_OF_SCOPE, never a trusted DESTRUCTION (control - unchanged from
-  // before this fix, the SAME safety property the old name-only check
-  // already provided for these 5 verbs).
-  assert.equal(verdictOf('nice -n 10 rm -rf x'), 'OUT_OF_SCOPE');
+  // A real destruction verb reached the same way UPGRADES to a trusted
+  // DESTRUCTION as of wave 10 (blind, Group 101): nice now has its own
+  // value-flag table (`skipNiceFlags`), so `rm` is the walk's PRIMARY
+  // candidate here, not a secondary one - the "never a trusted
+  // DESTRUCTION" ceiling this control used to assert applied only to the
+  // secondary-candidate path, which `rm` no longer travels for `nice`.
+  // The 6 sibling verbs above are UNAFFECTED (control, still OUT_OF_SCOPE
+  // above): classifyVerb returns the identical OUT_OF_SCOPE for them
+  // whether reached as primary or secondary, since none of them can ever
+  // produce a DESTRUCTION verdict at all - only a genuine
+  // DESTRUCTION_VERBS/mv/move-item/git member had anything to gain from
+  // landing on the primary path instead of the secondary one.
+  assert.equal(verdictOf('nice -n 10 rm -rf x'), 'DESTRUCTION');
   // A name that is genuinely just an EARLIER command's own argument,
   // with no operand of its own, still resolves NO_MATCH - classifyVerb
   // itself says so (control, proves no new false positive).
@@ -3397,4 +3409,87 @@ test('a real destruction verb and a truncating redirect in the SAME segment both
   assert.equal(redirectWinsOverUnjudged.verdict, 'DESTRUCTION');
   assert.equal(redirectWinsOverUnjudged.findings.length, 1);
   assert.equal(redirectWinsOverUnjudged.findings[0].target, 'out.txt');
+});
+
+// --- Group 100 (wave 10, blind - CRITICAL, a real bypass) - GNU getopt
+// clustering: the FIRST value-taking short option in a cluster consumes
+// EVERYTHING after it in the same token as its own joined value; a later
+// character is never a separate flag, even when it happens to spell
+// another value-taking option's letter. truncate has two value-taking
+// short options, -r/--reference and -s/--size (CITED: `truncate --help`,
+// RUN live - "-r, --reference=RFILE" / "-s, --size=SIZE"); -c/-o are
+// boolean and never interrupt the scan. TRUNCATE_JOINED_S_RE and
+// TRUNCATE_BARE_S_CLUSTER_RE each searched a token for the LETTER 's'
+// anywhere, oblivious to an EARLIER 'r' having already claimed the
+// remainder - `-rs+10` (a --reference value that happens to contain "s")
+// was misread as `--size=+10` (grow-only, provably safe) and returned
+// NO_MATCH with NO finding at all; `-rs targetfile` was misread as a bare
+// `-s` needing an EXTERNAL value, consuming targetfile itself and leaving
+// no FILE operand. Both are the SAME root cause (whichever of r/s comes
+// FIRST in the cluster owns the rest) fixed once via the shared
+// `truncateClusterFlag` scan, not per-instance.
+test('truncate: -r claims the cluster remainder before a later s can (Group 100)', () => {
+  // -rs+10: -r's value is "s+10" (a reference filename) - --reference
+  // never feeds the grow-only exemption, so this stays DESTRUCTION.
+  const joined = parseCommand('truncate -rs+10 f');
+  assert.equal(joined.verdict, 'DESTRUCTION');
+  assert.equal(joined.findings[0].target, 'f');
+
+  // -rs (bare): -r's value is joined ("s") right there in the token - it
+  // does NOT reach for an external token, so targetfile is the real FILE.
+  const bareJoined = parseCommand('truncate -rs targetfile');
+  assert.equal(bareJoined.verdict, 'DESTRUCTION');
+  assert.equal(bareJoined.findings[0].target, 'targetfile');
+
+  // Control: -r LAST in the cluster (nothing after it) still needs an
+  // external value - unchanged, unaffected by this fix.
+  const rLast = parseCommand('truncate -cor rfile f');
+  assert.equal(rLast.verdict, 'DESTRUCTION');
+  assert.equal(rLast.findings[0].target, 'f');
+
+  // Control: -s still resolves correctly when it is the first (or only)
+  // value-taking letter in the cluster - grow-only stays exempt.
+  const growOnly = parseCommand('truncate -cvs+10 f');
+  assert.equal(growOnly.verdict, 'NO_MATCH');
+  const shrinkCluster = parseCommand('truncate -cvs-10 f');
+  assert.equal(shrinkCluster.verdict, 'DESTRUCTION');
+  assert.equal(shrinkCluster.findings[0].target, 'f');
+});
+
+// --- Group 101 (wave 10, blind) - AXIS 7 (SITE): sudo's own value-taking
+// short/long flags get a table (`skipSudoFlags`) so a prefix chain's own
+// options never derail the candidate walk that finds the real verb behind
+// it; `nice`, `timeout`, `env` and `stdbuf` sit in the SAME PREFIX_VERBS/
+// TIMEOUT_VERB machinery with NO such table. `nice`'s own -n/--adjustment
+// (CITED: `nice --help`, RUN live - "-n, --adjustment=N"), `timeout`'s own
+// -k/--kill-after and -s/--signal (CITED: `timeout --help`, RUN live),
+// `env`'s own -u/--unset and -C/--chdir (CITED: `env --help`, RUN live),
+// and `stdbuf`'s own -i/-o/-e (CITED: `stdbuf --help`, RUN live) each take
+// a value on the NEXT token when space-separated - with no table, that
+// value token (a bare number, a signal name, a var name) was itself
+// flag-shaped-negative (not `-`-prefixed) and so became a spurious
+// PRIMARY candidate ahead of the real verb, demoting the real verb to a
+// SECONDARY candidate - which this room's own rows 8-13 ruling never
+// promotes past OUT_OF_SCOPE, even for a plain `rm -rf x`. A genuine
+// DESTRUCTION was silently downgraded to an `unjudged` admission purely
+// because of a SPACE the joined form (`-n5`) never exposed - falsifying
+// this file's own comment that per-tool flag knowledge is "never required
+// for correctness" (corrected alongside this fix).
+test('prefix verbs: nice/timeout/env/stdbuf own value-taking flags do not derail the walk (Group 101)', () => {
+  assert.equal(verdictOf('nice -n 5 rm -rf x'), 'DESTRUCTION');
+  assert.equal(verdictOf('nice --adjustment 5 rm -rf x'), 'DESTRUCTION');
+  assert.equal(verdictOf('nice -n5 rm -rf x'), 'DESTRUCTION'); // joined form, control
+
+  assert.equal(verdictOf('timeout -k 10 5 rm -rf x'), 'DESTRUCTION');
+  assert.equal(verdictOf('timeout --foreground 5 rm -rf x'), 'DESTRUCTION');
+  assert.equal(verdictOf('timeout -s TERM 5 rm -rf x'), 'DESTRUCTION');
+  assert.equal(verdictOf('timeout --kill-after=10 5 rm -rf x'), 'DESTRUCTION'); // joined, control
+  assert.equal(verdictOf('timeout 5 rm -rf x'), 'DESTRUCTION'); // no flags, control
+
+  assert.equal(verdictOf('env -u PATH rm -rf x'), 'DESTRUCTION');
+  assert.equal(verdictOf('env -C /tmp rm -rf x'), 'DESTRUCTION');
+  assert.equal(verdictOf('env FOO=bar rm -rf x'), 'DESTRUCTION'); // assignment-only, control
+
+  assert.equal(verdictOf('stdbuf -o L rm -rf x'), 'DESTRUCTION');
+  assert.equal(verdictOf('stdbuf -i 0 rm -rf x'), 'DESTRUCTION');
 });

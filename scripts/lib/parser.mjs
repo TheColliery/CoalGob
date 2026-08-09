@@ -178,6 +178,100 @@ function skipSudoFlags(words, startIdx) {
   return i;
 }
 
+// AXIS 7 (SITE), wave 10 (blind): sudo is not the only PREFIX_VERBS member
+// with its own value-taking flags - the comment above claimed the generic
+// walk finds a listed verb "regardless of whether one exists for this
+// prefix", which is FALSE whenever the flag's value is a SEPARATE token
+// that is not itself flag-shaped: that value token (a bare number, a
+// signal name) becomes a spurious PRIMARY candidate ahead of the real
+// verb, demoting the real verb to a SECONDARY candidate - and this room's
+// own rows 8-13 ruling never promotes a secondary candidate past
+// OUT_OF_SCOPE, even for a plain `rm -rf x`. DECLINED to generalize
+// `skipSudoFlags` into one shared parameterized walker (rot-canary
+// finding #7, defence round 3, "two flag vocabularies that happen to
+// share a walk shape; merging couples two grammars that will diverge...
+// do not re-raise") - kept as separate per-tool functions on the same
+// precedent `skipGitGlobalFlags` already set.
+
+// nice's own value-taking flag, CITED SOURCE `nice --help`, RUN live this
+// round: "-n, --adjustment=N   add integer N to the niceness". Nothing
+// else nice takes is value-taking.
+const NICE_VALUE_FLAGS = new Set(['-n']);
+const NICE_LONG_VALUE_FLAGS = new Set(['--adjustment']);
+
+function skipNiceFlags(words, startIdx) {
+  let i = startIdx;
+  while (i < words.length) {
+    const w = words[i].value;
+    if (w === '--') { i += 1; break; }
+    if (NICE_VALUE_FLAGS.has(w) || NICE_LONG_VALUE_FLAGS.has(w)) { i += 2; continue; }
+    if (isFlagShaped(w)) { i += 1; continue; }
+    break;
+  }
+  return i;
+}
+
+// timeout's own value-taking flags, CITED SOURCE `timeout --help`, RUN
+// live this round: "-k, --kill-after=DURATION" / "-s, --signal=SIGNAL".
+// --preserve-status/--foreground/-v/--verbose are boolean and fall
+// through to the generic isFlagShaped skip below, same as any unlisted
+// flag.
+const TIMEOUT_VALUE_FLAGS = new Set(['-k', '-s']);
+const TIMEOUT_LONG_VALUE_FLAGS = new Set(['--kill-after', '--signal']);
+
+function skipTimeoutFlags(words, startIdx) {
+  let i = startIdx;
+  while (i < words.length) {
+    const w = words[i].value;
+    if (w === '--') { i += 1; break; }
+    if (TIMEOUT_VALUE_FLAGS.has(w) || TIMEOUT_LONG_VALUE_FLAGS.has(w)) { i += 2; continue; }
+    if (isFlagShaped(w)) { i += 1; continue; }
+    break;
+  }
+  return i;
+}
+
+// env's own value-taking flags, CITED SOURCE `env --help`, RUN live this
+// round: "-u, --unset=NAME" / "-C, --chdir=DIR" / "-S, --split-string=S".
+// `--block-signal[=SIG]` and its siblings take an OPTIONAL value valid
+// only in the joined `=` form (GNU getopt_long never binds a space-
+// separated token to an optional-argument long option) - a bare
+// `--block-signal SIG` does not consume SIG as env's own value at all
+// (env would read SIG itself as the COMMAND), so no table entry is
+// needed or correct for those.
+const ENV_VALUE_FLAGS = new Set(['-u', '-C', '-S']);
+const ENV_LONG_VALUE_FLAGS = new Set(['--unset', '--chdir', '--split-string']);
+
+function skipEnvFlags(words, startIdx) {
+  let i = startIdx;
+  while (i < words.length) {
+    const w = words[i].value;
+    if (w === '--') { i += 1; break; }
+    if (ENV_VALUE_FLAGS.has(w) || ENV_LONG_VALUE_FLAGS.has(w)) { i += 2; continue; }
+    if (isFlagShaped(w)) { i += 1; continue; }
+    break;
+  }
+  return i;
+}
+
+// stdbuf's own value-taking flags, CITED SOURCE `stdbuf --help`, RUN live
+// this round: "-i, --input=MODE" / "-o, --output=MODE" / "-e, --error=
+// MODE" - all three mandatory-argument, all three real flags stdbuf has.
+const STDBUF_VALUE_FLAGS = new Set(['-i', '-o', '-e']);
+const STDBUF_LONG_VALUE_FLAGS = new Set(['--input', '--output', '--error']);
+
+function skipStdbufFlags(words, startIdx) {
+  let i = startIdx;
+  while (i < words.length) {
+    const w = words[i].value;
+    if (w === '--') { i += 1; break; }
+    if (STDBUF_VALUE_FLAGS.has(w) || STDBUF_LONG_VALUE_FLAGS.has(w)) { i += 2; continue; }
+    if (isFlagShaped(w)) { i += 1; continue; }
+    break;
+  }
+  return i;
+}
+
 // The structural fix: a walk that keeps advancing until it finds a token
 // in COMMAND position or runs out - it never returns early because one
 // token was unclassifiable. Flag-shaped tokens (short, long, `=`-joined,
@@ -359,6 +453,14 @@ function resolveVerb(words) {
     const wLower = stripExeExtension(basenameOf(words[idx].value)).toLowerCase();
     if (wLower === TIMEOUT_VERB) {
       idx++;
+      // Wave 10 (blind): timeout's own flags (`-k`/`--kill-after`,
+      // `-s`/`--signal`, `--foreground`, etc.) may sit BEFORE its
+      // DURATION positional (`timeout -k 10 5 cmd`, `timeout --foreground
+      // 5 cmd`) - skip them first, or DURATION_RE never even sees the
+      // duration token and the real verb behind it demotes to a
+      // secondary candidate the same way Group 101 names for nice/env/
+      // stdbuf.
+      idx = skipTimeoutFlags(words, idx);
       if (idx < words.length && DURATION_RE.test(words[idx].value)) idx++;
       lastPrefixVerb = TIMEOUT_VERB;
       consumedPrefix = true;
@@ -845,9 +947,41 @@ const GNU_HELP_VERSION_OPTIONS = {
 // --size, --size=, the joined short form -s+10, or -s clustered with
 // other boolean short flags like -cs/-cs+10) - so this walks args once in
 // order and keeps overwriting, never checking one spelling in priority
-// order over another. Boundary, stated: only -s/--size's own value is
-// inspected; -c/-o/-r never affect grow-safety, clustered or not.
-const TRUNCATE_JOINED_S_RE = /^-[a-zA-Z]*s(.*)$/;
+// order over another. Boundary, stated: -c/-o never affect grow-safety,
+// clustered or not - but -r DOES (see truncateClusterFlag below): a
+// CORRECTED claim (wave 10, blind) - the old boundary here read "-c/-o/-r
+// never affect grow-safety", which was FALSE whenever -r's own joined
+// value happened to contain the letter 's' (`-rs+10` is `--reference=
+// s+10`, not `--size=+10`), a real bypass this file's own regex-based
+// scan could not see because it searched for 's' anywhere in the token
+// rather than asking which value-taking flag reaches it FIRST.
+
+// GNU getopt clustering: the FIRST value-taking short option encountered
+// in a cluster consumes EVERYTHING after it in the SAME token as its own
+// joined value - a later character is never a separate flag, even when it
+// spells another value-taking option's letter. truncate has exactly two
+// value-taking short options, -r/--reference and -s/--size (CITED SOURCE
+// `truncate --help`, RUN live this round: "-r, --reference=RFILE  base
+// size on RFILE" / "-s, --size=SIZE"); -c/-o are boolean and never
+// interrupt the scan. Single source of truth for BOTH call sites below
+// (isValueTakingFlag's bare-cluster check and truncateGrowSize's joined-
+// value extraction) - the two previously used INDEPENDENT regexes that
+// each searched for 's' alone, oblivious to an earlier 'r' already having
+// claimed the remainder (wave 10, blind, the site-duplication risk row 1
+// closed for isFlagShaped, recurring here with a real behavioural bug
+// riding on top). Returns null for a long option or a bare `-`/`--`.
+function truncateClusterFlag(token) {
+  if (!token.startsWith('-') || token.startsWith('--') || token.length < 2) return null;
+  const body = token.slice(1);
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (c === 's' || c === 'r') {
+      const rest = body.slice(i + 1);
+      return { flag: c, value: rest.length > 0 ? rest : undefined };
+    }
+  }
+  return null;
+}
 
 // The set: GNU truncate's SIZE modifier prefixes. CITED SOURCE:
 // `truncate --help`, RUN live on this host - "SIZE may also be prefixed
@@ -888,8 +1022,11 @@ function truncateGrowSize(args) {
         continue;
       }
     }
-    const joinedShort = TRUNCATE_JOINED_S_RE.exec(w);
-    if (joinedShort) { size = joinedShort[1] || args[i + 1]?.value; continue; }
+    const cluster = truncateClusterFlag(w);
+    if (cluster && cluster.flag === 's') { size = cluster.value !== undefined ? cluster.value : args[i + 1]?.value; continue; }
+    // cluster.flag === 'r': this token belongs entirely to -r/--reference
+    // (it claimed the rest first) - never feeds the grow-only check, same
+    // boundary the long-option branch above already states for --reference.
   }
   return size;
 }
@@ -940,19 +1077,23 @@ function isWindowsSwitch(verbLower, value) {
 }
 
 // truncate's synopsis (`truncate --help`, this host, live): "Usage:
-// truncate OPTION... FILE..." with "-s, --size=SIZE" as the one value-
-// taking option - FILE is a separate required operand from -s's own
-// value, so a bare `-s`/`--size`/a clustered `-Xs` (value in the NEXT
-// token) must skip that token too, or its value miscounts as FILE.
-const TRUNCATE_BARE_S_CLUSTER_RE = /^-[a-zA-Z]*s$/;
-
-// truncate's OTHER value-taking option, CITED SOURCE `truncate --help`
-// RUN live this round (Set Z6, wave 8): "-r, --reference=RFILE  base
-// size on RFILE" - RFILE is READ to learn a size, never written. Same
-// shape as -s/--size above: a bare `-r`/a clustered `-Xr` (value in the
-// NEXT token) must skip that token too, or RFILE miscounts as a second
-// FILE operand.
-const TRUNCATE_BARE_R_CLUSTER_RE = /^-[a-zA-Z]*r$/;
+// truncate OPTION... FILE..." with "-s, --size=SIZE" and "-r, --reference
+// =RFILE" as its two value-taking options - FILE is a separate required
+// operand from either one's own value, so a bare `-s`/`-r`/`--size`/
+// `--reference` or a clustered form ending in one of them (value in the
+// NEXT token) must skip that token too, or the value miscounts as FILE.
+// A bare/clustered check alone is not enough, though: whether a cluster
+// is even WAITING for a next-token value at all depends on which of r/s
+// it reaches FIRST (`truncateClusterFlag` above) - `-rs` is fully self-
+// contained (-r's value is the joined "s"), never reaching for targetfile
+// the way a lone `-s`/`-cs`/`-cor` genuinely does (wave 10, blind fix:
+// the OLD pair of regexes here each matched "ends in bare r" / "ends in
+// bare s" independently, so `-rs` matched the s-regex and wrongly
+// consumed the real FILE operand as if it were -s's own value).
+function isTruncateClusterWaitingForValue(value) {
+  const cluster = truncateClusterFlag(value);
+  return cluster !== null && cluster.value === undefined;
+}
 
 // Remove-Item's own value-taking parameters, CITED SOURCE
 // `(Get-Command Remove-Item).Parameters`, RUN live on this host
@@ -986,8 +1127,8 @@ const REMOVE_ITEM_SWITCH_FLAGS = new Set([
 
 function isValueTakingFlag(verbLower, value) {
   if (verbLower === 'truncate') {
-    if (value === '--size' || TRUNCATE_BARE_S_CLUSTER_RE.test(value)) return true;
-    if (value === '--reference' || TRUNCATE_BARE_R_CLUSTER_RE.test(value)) return true;
+    if (value === '--size' || value === '--reference') return true;
+    if (isTruncateClusterWaitingForValue(value)) return true;
     // Set Z5 (wave 8): an unambiguous PREFIX of --size/--reference in
     // the SPACE-SEPARATED bare-flag form (e.g. `--siz VALUE`) needs the
     // same "skip the flag AND its value token" treatment the exact
@@ -1444,13 +1585,21 @@ function resolveSegmentVerb(words, heredoc, fdOutOfScope, precededByPipe) {
     return classifyVerb(base, baseLower, args, heredoc, fdOutOfScope, precededByPipe);
   }
 
-  // A prefix chain was consumed. Per-tool flag knowledge, where it exists
-  // (sudo's), is an OPTIMIZATION that sharpens the walk's starting point;
-  // it is never required for correctness - the generic walk below finds a
-  // listed verb regardless of whether one exists for this prefix.
-  const candidateStart = resolved.lastPrefixVerb === 'sudo'
-    ? skipSudoFlags(words, resolved.index)
-    : resolved.index;
+  // A prefix chain was consumed. Per-tool flag knowledge, where it exists,
+  // sharpens the walk's starting point - CORRECTED (wave 10, blind): the
+  // old claim here was that it is "never required for correctness", but a
+  // prefix's own value-taking flag in the space-separated form (its value
+  // on the NEXT token, not flag-shaped itself) turns that value into a
+  // spurious PRIMARY candidate ahead of the real verb, demoting the real
+  // verb to a SECONDARY one - which never reaches DESTRUCTION (rows
+  // 8-13). Per-tool knowledge is required for correctness exactly when a
+  // prefix has such a flag; the generic walk is a backstop only for
+  // prefixes that do not.
+  let candidateStart = resolved.index;
+  if (resolved.lastPrefixVerb === 'sudo') candidateStart = skipSudoFlags(words, resolved.index);
+  else if (resolved.lastPrefixVerb === 'nice') candidateStart = skipNiceFlags(words, resolved.index);
+  else if (resolved.lastPrefixVerb === 'env') candidateStart = skipEnvFlags(words, resolved.index);
+  else if (resolved.lastPrefixVerb === 'stdbuf') candidateStart = skipStdbufFlags(words, resolved.index);
   const candidates = walkCandidates(words, candidateStart);
   if (candidates.length === 0) return { verdict: 'NO_MATCH' };
 

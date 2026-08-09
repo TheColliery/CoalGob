@@ -1253,15 +1253,49 @@ function verbAt(words, idx) {
   return { base, baseLower: VERB_ALIASES[stripped] || stripped };
 }
 
-// Name-only check for a SECONDARY candidate (any candidate past the
-// first). Deliberately narrower than classifyVerb: it never re-runs
-// analyzeDestructionVerb/analyzeMv/git's subcommand logic on data that
-// might just be an earlier command's own argument (`cat rm` - `rm` is a
-// filename, not a command), so a secondary candidate can only ever admit
-// OUT_OF_SCOPE, never a false DESTRUCTION on nothing.
+// Name-only check for a SECONDARY candidate, KEPT UNCHANGED (defence
+// round 10 tried replacing this outright with a classifyVerb-based
+// check and it regressed a room ruling - see secondaryCandidateVerdict's
+// own comment for why). Deliberately a bare NAME match, never argument-
+// aware: `sudo -u root cat rm` deliberately admits OUT_OF_SCOPE even
+// though `rm` here has no operand of its own and a fully argument-aware
+// check would correctly call it NO_MATCH - the room's own documented
+// trade-off is to stay cautious on a BARE NAME sighting for these 5
+// verb classes specifically, not to prove destructiveness before flagging.
 function isSecondaryCandidateNamedVerb(words, idx) {
   const { baseLower } = verbAt(words, idx);
   return DESTRUCTION_VERBS.has(baseLower) || baseLower === 'mv' || baseLower === 'move-item' || NAMED_DESTROYER_VERBS.has(baseLower) || baseLower === 'git';
+}
+
+// Axis-7 census rows 8-13 (defence round 10): SIX sibling OUT_OF_SCOPE
+// admissions classifyVerb's own chain already makes for a PRIMARY
+// candidate were invisible to a secondary one - cp-from-null-sink,
+// Set-Content -Value '', tee, Clear-Content, npx rimraf, <pkg> exec
+// rimraf. Unlike isSecondaryCandidateNamedVerb's 5 cases, NONE of these
+// six verbs can ever reach DESTRUCTION_VERBS/mv/move-item inside
+// classifyVerb, so classifyVerb can never hand this function a
+// DESTRUCTION verdict to downgrade - a bare NAME match would be FAR too
+// noisy for these six (`cp` alone is not destructive; only `cp` FROM a
+// null-sink SOURCE is), so this checks the SAME admission chain a
+// primary candidate gets and passes an OUT_OF_SCOPE verdict through
+// unchanged (it already carries no certainty claim).
+//
+// SAFE to reuse classifyVerb's own heredoc/fdOutOfScope-aware
+// unjudgedConstruct path here: by construction this is only ever
+// reached after the PRIMARY candidate's own classifyVerb call already
+// returned NO_MATCH - and unjudgedConstruct fires UNCONDITIONALLY for
+// any verb outside DESTRUCTION_VERBS/mv/move-item, so a NO_MATCH
+// primary result already proves heredoc/fdOutOfScope were both falsy
+// for this segment; re-checking them for a secondary candidate can
+// never newly fire.
+function secondaryCandidateVerdict(words, idx, heredoc, fdOutOfScope, precededByPipe) {
+  if (isSecondaryCandidateNamedVerb(words, idx)) {
+    return { verdict: 'OUT_OF_SCOPE', reason: 'a listed verb may be present past an unresolved prefix chain', kind: KIND_UNJUDGED };
+  }
+  const { base, baseLower } = verbAt(words, idx);
+  const args = words.slice(idx + 1);
+  const result = classifyVerb(base, baseLower, args, heredoc, fdOutOfScope, precededByPipe);
+  return result.verdict === 'OUT_OF_SCOPE' ? result : null;
 }
 
 // --- one segment -------------------------------------------------------
@@ -1373,14 +1407,12 @@ function analyzeSegment(tokens, precededByPipe) {
   // The walk keeps looking rather than returning: a mis-identified
   // PRIMARY candidate (usually a flag's value we could not confirm takes
   // one) must not silently end the search. Every later candidate is
-  // checked by NAME only (never re-run through classifyVerb - a name at
-  // this position may just as easily be an EARLIER command's own
-  // argument, `cat rm`, and a full re-classification there risks a false
-  // DESTRUCTION on nothing) and can only ever admit OUT_OF_SCOPE.
+  // classified the same way a primary candidate would be, but a
+  // DESTRUCTION verdict from it is never trusted directly - see
+  // secondaryCandidateVerdict's own comment.
   for (const idx of secondaryIdx) {
-    if (isSecondaryCandidateNamedVerb(words, idx)) {
-      return { verdict: 'OUT_OF_SCOPE', reason: 'a listed verb may be present past an unresolved prefix chain', kind: KIND_UNJUDGED };
-    }
+    const secondaryResult = secondaryCandidateVerdict(words, idx, heredoc, fdOutOfScope, precededByPipe);
+    if (secondaryResult) return secondaryResult;
   }
   return { verdict: 'NO_MATCH' };
 }

@@ -3263,3 +3263,46 @@ test('a quoted shell keyword is a literal word, never the reserved-word prefix (
   // The bare, unquoted keyword still works exactly as before (control).
   assert.equal(verdictOf('if rm -rf x'), 'DESTRUCTION');
 });
+
+// --- Group 96 (defence round 10, axis-7 census rows 8-13) - a SECONDARY
+// candidate (reached past an unresolved prefix chain, e.g. `nice -n 10
+// <verb>...`) was checked by NAME only, against exactly 5 cases
+// (DESTRUCTION_VERBS/mv/move-item/NAMED_DESTROYER_VERBS/git). Six
+// sibling OUT_OF_SCOPE admissions classifyVerb's own chain already
+// makes for a PRIMARY candidate were invisible here: cp-from-null-sink,
+// Set-Content -Value '' clear-shape, tee, Clear-Content, npx rimraf,
+// <pkg> exec rimraf. The FIRST attempt at this fix replaced the name-
+// only check outright with a classifyVerb call and regressed a room
+// ruling (`sudo -u root cat rm` must stay OUT_OF_SCOPE even though `rm`
+// has no operand there, a deliberate stay-cautious-on-bare-NAME trade-
+// off, not something to prove destructiveness before flagging) - see
+// secondaryCandidateVerdict's own comment. Landed ADDITIVELY instead:
+// the old 5-case name check stays byte-for-byte, and the 6 new classes
+// are checked separately, since none of them can ever reach a
+// DESTRUCTION verdict from classifyVerb at all (a bare NAME match would
+// be far too noisy for them - `cp` alone is not destructive).
+// ships-if-missing: `nice -n 10 npx rimraf x` (or any of the other five
+// verbs, reached the identical way) is silently NO_MATCH.
+test('a secondary candidate gets every OUT_OF_SCOPE admission a primary candidate already gets, never a trusted DESTRUCTION (rows 8-13)', () => {
+  const cases = [
+    'nice -n 10 cp /dev/null x',
+    'nice -n 10 tee out.txt',
+    'nice -n 10 npx rimraf x',
+    'nice -n 10 npm exec rimraf x',
+    'nice -n 10 Clear-Content x',
+    "nice -n 10 Set-Content -Value '' x",
+  ];
+  for (const cmd of cases) {
+    const result = parseCommand(cmd);
+    assert.equal(result.verdict, 'OUT_OF_SCOPE', cmd);
+  }
+  // A real destruction verb reached the same way still downgrades to
+  // OUT_OF_SCOPE, never a trusted DESTRUCTION (control - unchanged from
+  // before this fix, the SAME safety property the old name-only check
+  // already provided for these 5 verbs).
+  assert.equal(verdictOf('nice -n 10 rm -rf x'), 'OUT_OF_SCOPE');
+  // A name that is genuinely just an EARLIER command's own argument,
+  // with no operand of its own, still resolves NO_MATCH - classifyVerb
+  // itself says so (control, proves no new false positive).
+  assert.equal(verdictOf('cat rm'), 'NO_MATCH');
+});

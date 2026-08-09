@@ -472,6 +472,19 @@ function resolveVerb(words) {
       consumedPrefix = true;
       continue;
     }
+    // Wave 10 (blind), AXIS 5 (structural context), Group 102: the
+    // LEADING while loop above this one only consumes an assignment
+    // BEFORE the first prefix verb - a real idiom like `env FOO=bar nice
+    // -n5 rm -rf x` puts a further assignment BETWEEN two chained prefix
+    // verbs (env's own grammar is `env NAME=VALUE... COMMAND`, and
+    // COMMAND can itself be another prefix verb), and without this
+    // branch the chain broke here, leaving `nice` to be walked as an
+    // ordinary (non-destructive) candidate instead of a further prefix.
+    if (ASSIGNMENT_RE.test(words[idx].value)) {
+      idx++;
+      consumedPrefix = true;
+      continue;
+    }
     // Axis-7 census row 7 (defence round 10): quoting/escaping a
     // reserved word strips its keyword-hood (POSIX shell grammar,
     // already this file's own rule for `[[`/`]]` in the tokenizer and

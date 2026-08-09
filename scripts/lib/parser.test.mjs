@@ -3493,3 +3493,30 @@ test('prefix verbs: nice/timeout/env/stdbuf own value-taking flags do not derail
   assert.equal(verdictOf('stdbuf -o L rm -rf x'), 'DESTRUCTION');
   assert.equal(verdictOf('stdbuf -i 0 rm -rf x'), 'DESTRUCTION');
 });
+
+// --- Group 102 (wave 10, blind) - AXIS 5 (STRUCTURAL CONTEXT): resolveVerb's
+// own while loop chains any RUN of PREFIX_VERBS members back to back
+// (`sudo env FOO=bar rm` already worked - sudo then env, consumed by two
+// consecutive loop iterations before the FIRST assignment is even seen).
+// What it could NOT do was skip an ASSIGNMENT sitting BETWEEN two prefix
+// verbs (`env FOO=bar nice -n5 rm -rf x` - a real, common idiom: set an
+// env var, THEN lower priority, THEN destroy) - the loop's only
+// assignment-handling was the LEADING while loop before its own start,
+// so hitting "FOO=bar" right after "env" broke the chain immediately,
+// leaving "nice" to be walked as an ORDINARY candidate (not a listed
+// destroyer, NO_MATCH) and demoting the real `rm` to a SECONDARY
+// candidate - the same downgrade-to-`unjudged` shape Group 101 already
+// named for a single prefix's own value flags, one level up the chain.
+// Fixed by letting the main loop ALSO consume an assignment wherever it
+// appears, not only before the first prefix verb.
+test('an assignment between two chained prefix verbs does not break the chain (Group 102)', () => {
+  assert.equal(verdictOf('env FOO=bar nice -n5 rm -rf x'), 'DESTRUCTION');
+  assert.equal(verdictOf('env FOO=bar nice -n 5 rm -rf x'), 'DESTRUCTION');
+  assert.equal(verdictOf('env FOO=bar sudo rm -rf x'), 'DESTRUCTION');
+  assert.equal(verdictOf('env FOO=bar timeout 5 rm -rf x'), 'DESTRUCTION');
+  assert.equal(verdictOf('env FOO=bar BAZ=qux nice -n5 rm -rf x'), 'DESTRUCTION');
+  // Controls, unaffected (already worked before this fix).
+  assert.equal(verdictOf('sudo env FOO=bar rm -rf x'), 'DESTRUCTION');
+  assert.equal(verdictOf('nice env FOO=bar rm -rf x'), 'DESTRUCTION');
+  assert.equal(verdictOf('env FOO=bar rm -rf x'), 'DESTRUCTION');
+});

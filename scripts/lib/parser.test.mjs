@@ -3243,3 +3243,23 @@ test('a colon-bound Remove-Item flag never miscounts its own value-taking OR swi
     assert.deepEqual(result.findings.map((f) => f.target), targets, cmd);
   }
 });
+
+// --- Group 95 (defence round 10, axis-7 census row 7) - `resolveVerb`'s
+// `SHELL_KEYWORDS` branch skipped a word as a bash keyword prefix
+// without checking `.quoted`, four lines above the `for`->`do` lookahead
+// that DOES check it (`!w.quoted && w.value.toLowerCase() === 'do'`).
+// Quoting or escaping a reserved word strips its keyword-hood (POSIX
+// shell grammar, already the room's own stated rule for `[[`/`]]` and
+// for backslash-escapes) - a quoted `"if"` is a LITERAL WORD, the
+// program name itself, never the keyword, so real bash never skips past
+// it; the words that follow are ITS OWN ARGUMENTS, not a real
+// invocation of whatever verb happens to sit next.
+// ships-if-missing: `"if" rm -rf x` is classified DESTRUCTION on `rm` -
+// a false positive, since real bash runs a program literally named
+// "if" with arguments rm/-rf/x, never touching the real rm utility.
+test('a quoted shell keyword is a literal word, never the reserved-word prefix (row 7)', () => {
+  assert.equal(verdictOf('"if" rm -rf x'), 'NO_MATCH');
+  assert.equal(verdictOf('"while" rm -rf x'), 'NO_MATCH');
+  // The bare, unquoted keyword still works exactly as before (control).
+  assert.equal(verdictOf('if rm -rf x'), 'DESTRUCTION');
+});

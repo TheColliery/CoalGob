@@ -370,7 +370,14 @@ function resolveVerb(words) {
       consumedPrefix = true;
       continue;
     }
-    if (SHELL_KEYWORDS.has(wLower)) {
+    // Axis-7 census row 7 (defence round 10): quoting/escaping a
+    // reserved word strips its keyword-hood (POSIX shell grammar,
+    // already this file's own rule for `[[`/`]]` in the tokenizer and
+    // for backslash-escapes) - a quoted "if" is a LITERAL WORD (the
+    // program name itself), never the keyword, so real bash never skips
+    // past it. The `for` branch below already checks `.quoted` on its
+    // own `do` lookahead; this branch, four lines above it, did not.
+    if (!words[idx].quoted && SHELL_KEYWORDS.has(wLower)) {
       idx++;
       consumedPrefix = true;
       continue;

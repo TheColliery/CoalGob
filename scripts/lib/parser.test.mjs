@@ -3210,3 +3210,36 @@ test('an unambiguous --help/--version prefix is a no-op on every GNU verb it app
   assert.equal(verdictOf('rm --xyz file.txt'), 'DESTRUCTION');
   assert.equal(verdictOf('rmdir --ver x'), 'DESTRUCTION');
 });
+
+// --- Group 94 (defence round 10, axis-7 census rows 4+5) - two gaps in
+// the SAME function, same site: `isColonValueFlag` excluded ONLY
+// `-WhatIf`'s colon-form from "supplies a real operand" - row 4:
+// REMOVE_ITEM_VALUE_FLAGS (Set Z1) already names Remove-Item's OTHER
+// non-path value-taking parameters, but the colon-bound form of any of
+// them (`-Exclude:keep.txt`) still miscounted its value as a target.
+// Row 5: no set existed AT ALL for Remove-Item's own OTHER boolean
+// SWITCH parameters (-Force/-Confirm/-Recurse/-Verbose/-Debug/
+// -UseTransaction, CITED SOURCE (Get-Command Remove-Item).Parameters,
+// RUN live, the same enumeration Set Z1 already ran) - their colon-form
+// value ($true/$false) was ALSO miscounted as a target.
+// ships-if-missing (row 4): `-Exclude:keep.txt` reports keep.txt - the
+// path the user excluded - as at risk, the exact Z1 defect through a
+// different SITE. ships-if-missing (row 5): `-Force:$true`/
+// `-Recurse:$false` report the literal string "$true"/"$false" as a
+// fabricated at-risk file.
+test('a colon-bound Remove-Item flag never miscounts its own value-taking OR switch value as a target (rows 4+5)', () => {
+  const cases = [
+    ['Remove-Item -Exclude:keep.txt x.txt', ['x.txt']],
+    ['Remove-Item -Force:$true x.txt', ['x.txt']],
+    ['Remove-Item -Recurse:$false x.txt', ['x.txt']],
+    ['Remove-Item -Confirm:$true x.txt', ['x.txt']],
+    // A real value-taking flag's colon-form still supplies its target
+    // when the flag itself IS a path parameter (control - unaffected).
+    ['Remove-Item -Path:x.txt', ['x.txt']],
+  ];
+  for (const [cmd, targets] of cases) {
+    const result = parseCommand(cmd);
+    assert.equal(result.verdict, 'DESTRUCTION', cmd);
+    assert.deepEqual(result.findings.map((f) => f.target), targets, cmd);
+  }
+});

@@ -736,14 +736,22 @@ function isSwitchOn(value, switchNameLower) {
 // correctly via `-Path:foo.txt`, proving the form is not switch-
 // specific). A colon-joined flag on remove-item therefore supplies a
 // real operand UNLESS its name is -WhatIf (a switch, handled separately
-// by isRemoveItemWhatIf - its value means dry-run on/off, not a file).
-// Boundary: scoped to remove-item, the only PowerShell cmdlet among
-// DESTRUCTION_VERBS.
+// by isRemoveItemWhatIf - its value means dry-run on/off, not a file),
+// one of REMOVE_ITEM_VALUE_FLAGS (axis-7 census row 4, defence round 10
+// - Set Z1 already named these as non-target value-taking parameters
+// for the SPACE-separated form; the colon-bound form had the identical
+// gap at a sibling site), or one of REMOVE_ITEM_SWITCH_FLAGS (row 5 -
+// no set existed at all, so e.g. `-Force:$true` miscounted "$true" as a
+// target). Boundary: scoped to remove-item, the only PowerShell cmdlet
+// among DESTRUCTION_VERBS.
 function isColonValueFlag(verbLower, value) {
   if (verbLower !== 'remove-item' || !value.startsWith('-')) return false;
   const idx = value.indexOf(':');
   if (idx <= 0 || idx >= value.length - 1) return false;
-  return !isWhatIfName(value.slice(0, idx).toLowerCase());
+  const base = value.slice(0, idx).toLowerCase();
+  if (isWhatIfName(base)) return false;
+  if (REMOVE_ITEM_VALUE_FLAGS.has(base) || REMOVE_ITEM_SWITCH_FLAGS.has(base)) return false;
+  return true;
 }
 
 // The real operand behind a colon-bound flag (`-Path:foo.txt` ->
@@ -930,6 +938,17 @@ const REMOVE_ITEM_VALUE_FLAGS = new Set([
   '-warningaction', '-informationaction', '-errorvariable',
   '-warningvariable', '-informationvariable', '-outvariable',
   '-outbuffer', '-pipelinevariable', '-stream',
+]);
+
+// Remove-Item's own OTHER boolean SWITCH parameters, same CITED SOURCE
+// as REMOVE_ITEM_VALUE_FLAGS (SwitchParameter type in the same live
+// enumeration) - axis-7 census row 5 (defence round 10): no set existed
+// for these at all, so their colon-form value ($true/$false) was
+// miscounted as a target the same way row 4's value-taking flags were.
+// -WhatIf is deliberately NOT here - it already has its own dedicated
+// abbreviation-aware check (isWhatIfName/isRemoveItemWhatIf).
+const REMOVE_ITEM_SWITCH_FLAGS = new Set([
+  '-recurse', '-force', '-verbose', '-debug', '-confirm', '-usetransaction',
 ]);
 
 function isValueTakingFlag(verbLower, value) {

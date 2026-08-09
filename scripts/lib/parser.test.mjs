@@ -3183,3 +3183,30 @@ test('a dual-platform verb\'s real POSIX path is not eaten as a fake cmd.exe swi
   // as a plausible switch, not the finding here, kept as controls).
   assert.deepEqual(parseCommand('rmdir /home/user/build').findings.map((f) => f.target), ['/home/user/build']);
 });
+
+// --- Group 93 (defence round 10, axis-7 census row 2) - `isNoOpFlag`
+// exact-matched `--help`/`--version` only, never their unambiguous
+// prefixes - the SAME `isLongOptionMatch` mechanism `lastMvOverride`/
+// `isMvBackupFlag`/`mvTargetDirectory`/`truncateGrowSize`/
+// `isValueTakingFlag` already use (Set Z5, wave 8) was never wired into
+// this shared no-op check every DESTRUCTION_VERBS member and `mv` route
+// through. CITED SOURCE (already RUN live this round): `rm --help`,
+// `rmdir --help`, `unlink --help`, plus the existing `truncate --help`/
+// `mv --help` citations - each verb's OWN full long-option list, so
+// ambiguity is judged against what that verb ACTUALLY exposes, not a
+// shared guess.
+// ships-if-missing: `rm --hel file.txt` - real GNU rm treats `--hel` as
+// the unambiguous prefix of `--help` and prints help, touching NOTHING
+// - is reported as DESTRUCTION on file.txt.
+test('an unambiguous --help/--version prefix is a no-op on every GNU verb it applies to (row 2)', () => {
+  assert.equal(verdictOf('rm --hel file.txt'), 'NO_MATCH');
+  assert.equal(verdictOf('rmdir --hel x'), 'NO_MATCH');
+  assert.equal(verdictOf('unlink --hel x'), 'NO_MATCH');
+  assert.equal(verdictOf('truncate --hel x'), 'NO_MATCH');
+  assert.equal(verdictOf('mv --hel a b'), 'NO_MATCH');
+  // A genuinely ambiguous/unrelated prefix must NOT match (control) -
+  // `--ver` on rmdir is a REAL ambiguity (--verbose and --version both
+  // start with "ver"), the same GNU getopt_long would itself reject.
+  assert.equal(verdictOf('rm --xyz file.txt'), 'DESTRUCTION');
+  assert.equal(verdictOf('rmdir --ver x'), 'DESTRUCTION');
+});

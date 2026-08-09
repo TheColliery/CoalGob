@@ -764,6 +764,11 @@ function isNoOpFlag(verbLower, value) {
   if (CMD_EXE_VERBS.has(verbLower) && value === '/?') return true;
   if (CMD_EXE_VERBS.has(verbLower) && !DUAL_PLATFORM_CMD_EXE_VERBS.has(verbLower)) return false;
   if (value === '--help' || value === '--version') return true;
+  const longOptions = GNU_HELP_VERSION_OPTIONS[verbLower];
+  if (longOptions && value.startsWith('--')) {
+    const { name } = splitLongOption(value);
+    if (isLongOptionMatch(name, '--help', longOptions) || isLongOptionMatch(name, '--version', longOptions)) return true;
+  }
   if (verbLower === 'remove-item' && isRemoveItemWhatIf(value)) return true;
   return false;
 }
@@ -772,6 +777,27 @@ function isNoOpFlag(verbLower, value) {
 // live this round - the set `isLongOptionMatch` (Set Z5, wave 8) judges
 // every truncate abbreviation's ambiguity against.
 const TRUNCATE_LONG_OPTIONS = ['--no-create', '--io-blocks', '--reference', '--size', '--help', '--version'];
+
+// Each GNU verb's OWN full long-option list, CITED SOURCE (each RUN
+// live this round, except mv/truncate already cited above): `rm
+// --help`, `rmdir --help`, `unlink --help`. Axis-7 census row 2
+// (defence round 10): `isLongOptionMatch` (Set Z5, wave 8) was never
+// wired into the shared `--help`/`--version` no-op check every
+// DESTRUCTION_VERBS member and `mv` route through - ambiguity is judged
+// against what EACH verb actually exposes, never a shared guess.
+const RM_LONG_OPTIONS = [
+  '--force', '--interactive', '--one-file-system', '--no-preserve-root',
+  '--preserve-root', '--recursive', '--verbose', '--help', '--version',
+];
+const RMDIR_LONG_OPTIONS = ['--ignore-fail-on-non-empty', '--parents', '--verbose', '--help', '--version'];
+const UNLINK_LONG_OPTIONS = ['--help', '--version'];
+const GNU_HELP_VERSION_OPTIONS = {
+  rm: RM_LONG_OPTIONS,
+  rmdir: RMDIR_LONG_OPTIONS,
+  unlink: UNLINK_LONG_OPTIONS,
+  truncate: TRUNCATE_LONG_OPTIONS,
+  mv: MV_LONG_OPTIONS,
+};
 
 // The set: truncate's -s/--size grammar. GNU getopt semantics - when the
 // option repeats, the LAST occurrence wins regardless of spelling (-s,

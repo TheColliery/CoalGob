@@ -1366,19 +1366,27 @@ function analyzeSegment(tokens, precededByPipe) {
   // first only, silently dropping every sibling target this parser had
   // already classified correctly.
   const truncatingRedirects = classified.filter((r) => r.kind === 'truncate' && !isNonFileSink(r.target));
-  if (truncatingRedirects.length > 0) {
-    // Schema ruling (defence round 8): a redirect has an OPERATOR
-    // (`1>`/`>|`/`&>`, ...), never a command/cmdlet name - reporting it
-    // under `verb` (every command-based finding's field) put two
-    // incompatible types behind one name with no way to recover the type
-    // from the shape. `operator` is exclusive with `verb` on every
-    // finding this parser emits - see the return-shape doc above
-    // parseCommand.
-    return {
+  // Axis-7 census row 16 (defence round 10, the HIGHEST BLAST RADIUS
+  // finding, hit by both wave-9 destroyers in 4 argument arrangements
+  // each): this used to RETURN immediately here, before the segment's
+  // own WORDS were ever resolved - `rm -rf x > log.txt` reported ONLY
+  // log.txt as at risk, and the real destruction verb sharing the same
+  // segment (`rm -rf x`) contributed NOTHING to the finding set.
+  // Computed as DATA instead of an early return; combined with whatever
+  // the segment's own words resolve to, below.
+  const redirectDestruction = truncatingRedirects.length > 0
+    ? {
+      // Schema ruling (defence round 8): a redirect has an OPERATOR
+      // (`1>`/`>|`/`&>`, ...), never a command/cmdlet name - reporting
+      // it under `verb` (every command-based finding's field) put two
+      // incompatible types behind one name with no way to recover the
+      // type from the shape. `operator` is exclusive with `verb` on
+      // every finding this parser emits - see the return-shape doc
+      // above parseCommand.
       verdict: 'DESTRUCTION',
       findings: truncatingRedirects.map((r) => ({ operator: r.op, target: r.target, conditional: false })),
-    };
-  }
+    }
+    : null;
   // A non-stdout fd redirect to a non-file sink (`2>/dev/null`) truncates
   // nothing - the null-sink check applies to any fd, not only fd 1, so it
   // must run here too rather than only inside the fd-1 truncating branch
@@ -1387,6 +1395,28 @@ function analyzeSegment(tokens, precededByPipe) {
   // parser can in fact read.
   const fdOutOfScope = classified.find((r) => r.kind === 'fd-out-of-scope' && !isNonFileSink(r.target));
 
+  const verbResult = resolveSegmentVerb(words, heredoc, fdOutOfScope, precededByPipe);
+  if (redirectDestruction && verbResult.verdict === 'DESTRUCTION') {
+    // Both a redirect AND a real verb destroyed something in the SAME
+    // segment - both are genuine, independent at-risk paths; report
+    // both findings, not whichever one this function happened to reach
+    // first.
+    return { verdict: 'DESTRUCTION', findings: [...redirectDestruction.findings, ...verbResult.findings] };
+  }
+  // A confirmed redirect DESTRUCTION outranks an uncertain/absent verb
+  // result (OUT_OF_SCOPE/NO_MATCH) - unchanged from before this fix,
+  // which already returned the redirect's own finding unconditionally
+  // in this situation.
+  return redirectDestruction || verbResult;
+}
+
+// Everything analyzeSegment's own WORDS resolve to, independent of
+// whatever the segment's redirects already decided - extracted (Set
+// row-16, defence round 10) so it can be called UNCONDITIONALLY instead
+// of only when no truncating redirect fired first. No logic changed
+// from what previously lived inline; every internal `return` here is
+// exactly what it was before extraction.
+function resolveSegmentVerb(words, heredoc, fdOutOfScope, precededByPipe) {
   if (words.length === 0) {
     if (fdOutOfScope) return { verdict: 'OUT_OF_SCOPE', reason: `redirect ${fdOutOfScope.op} not judged`, kind: KIND_UNJUDGED };
     return { verdict: 'NO_MATCH' };

@@ -3357,3 +3357,44 @@ test('a Windows drive-letter path after a colon-bound flag prefix is not mangled
   // follows bash's own escape rule (control).
   assert.equal(parseCommand('rm foo\\bar.txt').findings[0].target, 'foobar.txt');
 });
+
+// --- Group 99 (defence round 10, axis-7 census row 16, the HIGHEST
+// BLAST RADIUS finding - hit by both wave-9 destroyers, 4 argument
+// arrangements each) - `analyzeSegment` used to RETURN immediately once
+// it found a truncating redirect, before the segment's own WORDS were
+// ever resolved or classified. A real destruction verb sharing a
+// segment with a redirect (`rm -rf x > log.txt`) contributed NOTHING to
+// the finding set - only the redirect's own target ever surfaced.
+// Restructured (not patched per-instance): the redirect result is now
+// computed as DATA, the segment's words are resolved UNCONDITIONALLY,
+// and the two are combined - a confirmed redirect DESTRUCTION plus a
+// confirmed verb DESTRUCTION in the same segment are both real,
+// independent at-risk paths and both are reported; a confirmed redirect
+// DESTRUCTION still outranks an uncertain/absent verb result, unchanged
+// from before.
+// ships-if-missing: `rm -rf x > log.txt` reports ONLY log.txt as at
+// risk; a remedy built from the finding set never learns that `x` is
+// also being deleted by the same command.
+test('a real destruction verb and a truncating redirect in the SAME segment both surface (row 16)', () => {
+  const both = parseCommand('rm -rf x > log.txt');
+  assert.equal(both.verdict, 'DESTRUCTION');
+  assert.equal(both.findings.length, 2);
+  assert.ok(both.findings.some((f) => f.operator === '1>' && f.target === 'log.txt'));
+  assert.ok(both.findings.some((f) => f.verb === 'rm' && f.target === 'x'));
+
+  // Redirect-only and verb-only segments are unaffected (control).
+  const redirectOnly = parseCommand('echo hi > out.txt');
+  assert.equal(redirectOnly.findings.length, 1);
+  assert.equal(redirectOnly.findings[0].operator, '1>');
+
+  const verbOnly = parseCommand('rm -rf x');
+  assert.equal(verbOnly.findings.length, 1);
+  assert.equal(verbOnly.findings[0].verb, 'rm');
+
+  // A confirmed redirect DESTRUCTION still outranks an uncertain verb
+  // result in the same segment (control - unchanged behaviour).
+  const redirectWinsOverUnjudged = parseCommand('cat > out.txt <<EOF\nx\nEOF');
+  assert.equal(redirectWinsOverUnjudged.verdict, 'DESTRUCTION');
+  assert.equal(redirectWinsOverUnjudged.findings.length, 1);
+  assert.equal(redirectWinsOverUnjudged.findings[0].target, 'out.txt');
+});

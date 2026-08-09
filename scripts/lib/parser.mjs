@@ -125,6 +125,13 @@ function basenameOf(value) {
   return /[\\/]/.test(value) ? value.split(/[\\/]/).pop() : value;
 }
 
+// Axis-7 census row 1 (defence round 10): analyzeMv/analyzeMoveItem/
+// analyzeDestructionVerb each re-derived this exact test inline instead
+// of calling it - identical logic, zero behaviour change from closing
+// it (all three already agreed with this definition), but three
+// unmonitored copies is the SITE-duplication risk this census exists to
+// find: a future fix to what "flag-shaped" means could silently reach
+// zero, one, or all of them.
 function isFlagShaped(w) {
   return w.length > 1 && w.startsWith('-');
 }
@@ -561,7 +568,7 @@ function analyzeMv(args) {
     const w = args[i];
     if (!endOptions && w.value === '--') { endOptions = true; continue; }
     if (targetDirectory && i === targetDirectory.skipIdx) continue;
-    if (!endOptions && w.value.length > 1 && w.value.startsWith('-')) continue;
+    if (!endOptions && isFlagShaped(w.value)) continue;
     positional.push(w.value);
   }
 
@@ -661,7 +668,7 @@ function analyzeMoveItem(args) {
   if (!hasForce) {
     return { verdict: 'NO_MATCH' };
   }
-  const positional = args.filter((w) => !(w.value.length > 1 && w.value.startsWith('-'))).map((w) => w.value);
+  const positional = args.filter((w) => !isFlagShaped(w.value)).map((w) => w.value);
   if (positional.length === 0) {
     return { verdict: 'OUT_OF_SCOPE', reason: 'Move-Item argument shape not recognized', kind: KIND_UNJUDGED };
   }
@@ -952,7 +959,7 @@ function analyzeDestructionVerb(verbLower, args, precededByPipe) {
     if (!endOptions && isWindowsSwitch(verbLower, w)) continue;
     if (!endOptions && isValueTakingFlag(verbLower, w)) { i++; continue; }
     if (!endOptions && isColonValueFlag(verbLower, w)) { targets.push(colonFlagValue(w)); continue; }
-    if (!endOptions && w.length > 1 && w.startsWith('-')) continue;
+    if (!endOptions && isFlagShaped(w)) continue;
     targets.push(w);
   }
   if (sawNoOpFlag) {

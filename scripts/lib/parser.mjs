@@ -838,8 +838,31 @@ const CMD_EXE_VERBS = new Set(['del', 'rmdir']);
 // mistake this constant's own sibling correction exists to name).
 const DUAL_PLATFORM_CMD_EXE_VERBS = new Set(['rmdir']);
 
+// The real switch spellings PER VERB, CITED SOURCE (already RUN live,
+// the citation `DUAL_PLATFORM_CMD_EXE_VERBS` itself rests on): `del /?`
+// -> "DEL [/P] [/F] [/S] [/Q] [/A[[:]attributes]]"; `rmdir /?` ->
+// "RMDIR [/S] [/Q] [drive:]path". Axis-7 census row 3 (defence round
+// 10), the worst finding in the census: the OLD generic pattern
+// (`/^\/[A-Za-z]/`) never consulted DUAL_PLATFORM_CMD_EXE_VERBS at all -
+// it matched ANY POSIX absolute path starting with a letter, not just a
+// real switch, so `rmdir /tmp/olddir` (no switches, one ordinary
+// operand) had its only argument eaten as a fake switch and fell
+// through to a silent NO_MATCH. Enumerated per verb instead. del's own
+// `/A[[:]attributes]` bare (no-colon) form, e.g. `/AH`, is a named,
+// uncited boundary - not attempted (del is not dual-platform, and no
+// wave has evidenced a defect there).
+const CMD_EXE_SWITCHES = {
+  del: new Set(['/p', '/f', '/s', '/q', '/a']),
+  rmdir: new Set(['/s', '/q']),
+};
+
 function isWindowsSwitch(verbLower, value) {
-  return CMD_EXE_VERBS.has(verbLower) && /^\/[A-Za-z]/.test(value);
+  const switches = CMD_EXE_SWITCHES[verbLower];
+  if (!switches) return false;
+  const lower = value.toLowerCase();
+  const colonIdx = lower.indexOf(':');
+  const base = colonIdx === -1 ? lower : lower.slice(0, colonIdx);
+  return switches.has(base);
 }
 
 // truncate's synopsis (`truncate --help`, this host, live): "Usage:

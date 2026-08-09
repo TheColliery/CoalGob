@@ -3156,3 +3156,30 @@ test('a Windows drive-letter path is not mangled by bash backslash-escaping (Set
   const relative = parseCommand('rm foo\\bar.txt');
   assert.equal(relative.findings[0].target, 'foobar.txt');
 });
+
+// --- Group 92 (defence round 10, axis-7 census row 3 - the worst finding
+// in the census) - `isWindowsSwitch` never consulted `DUAL_PLATFORM_
+// CMD_EXE_VERBS`: its generic `/^\/[A-Za-z]/` pattern matched any POSIX
+// absolute path starting with a letter, not just a real cmd.exe switch,
+// so `rmdir`'s own real operands were eaten as fake switches. CITED
+// SOURCE (already RUN live, this room's own DUAL_PLATFORM_CMD_EXE_VERBS
+// citation): `del /?` -> "DEL [/P] [/F] [/S] [/Q] [/A[[:]attributes]]",
+// `rmdir /?` -> "RMDIR [/S] [/Q] [drive:]path". Enumerated the real
+// switch spellings per verb instead of a generic pattern.
+// ships-if-missing: `rmdir /tmp/olddir` is silently NO_MATCH - worse
+// than the OUT_OF_SCOPE this parser degrades to for genuinely unjudged
+// constructs, because NO_MATCH carries no ceiling-metric signal at all.
+test('a dual-platform verb\'s real POSIX path is not eaten as a fake cmd.exe switch (row 3)', () => {
+  const result = parseCommand('rmdir /tmp/olddir');
+  assert.equal(result.verdict, 'DESTRUCTION');
+  assert.equal(result.findings[0].target, '/tmp/olddir');
+
+  // Real switches on both verbs still work (control).
+  assert.deepEqual(parseCommand('rmdir /S /Q build').findings.map((f) => f.target), ['build']);
+  assert.deepEqual(parseCommand('del /S /Q /F somefile.txt').findings.map((f) => f.target), ['somefile.txt']);
+
+  // A deeper POSIX path, and one with more than one letter after the
+  // slash, are both unaffected either way (never matched the old regex
+  // as a plausible switch, not the finding here, kept as controls).
+  assert.deepEqual(parseCommand('rmdir /home/user/build').findings.map((f) => f.target), ['/home/user/build']);
+});

@@ -272,6 +272,25 @@ function skipStdbufFlags(words, startIdx) {
   return i;
 }
 
+// Group 103 (wave 10, blind): ONE dispatch, consulted from TWO call
+// sites (resolveVerb's own chain-walk, inline, and resolveSegmentVerb's
+// final candidateStart sharpening below) - not two independently
+// drifting copies of "which skipper for which prefix". Deliberately a
+// plain lookup table, not a merge of the skippers themselves: each named
+// function (and its own value-flag vocabulary) stays exactly as separate
+// as `skipGitGlobalFlags` already is from `skipSudoFlags` (rot-canary
+// finding #7, defence round 3) - only the DISPATCH is shared. `timeout`
+// is deliberately not here: its own branch in resolveVerb already runs
+// `skipTimeoutFlags` inline for a different reason (it also needs to
+// look for DURATION_RE immediately after), so it never reaches this
+// table at all.
+const PREFIX_FLAG_SKIPPERS = {
+  sudo: skipSudoFlags,
+  nice: skipNiceFlags,
+  env: skipEnvFlags,
+  stdbuf: skipStdbufFlags,
+};
+
 // The structural fix: a walk that keeps advancing until it finds a token
 // in COMMAND position or runs out - it never returns early because one
 // token was unclassifiable. Flag-shaped tokens (short, long, `=`-joined,
@@ -470,6 +489,14 @@ function resolveVerb(words) {
       idx++;
       lastPrefixVerb = wLower;
       consumedPrefix = true;
+      // Group 103 (wave 10, blind): run THIS prefix's own flag-skip
+      // immediately, in the same loop iteration that consumed it - not
+      // only as a final dispatch after the loop gives up. Without this,
+      // a prefix's own flag (`env -i ...`, `sudo -u root ...`) sitting
+      // between it and a FURTHER chained prefix verb broke the chain
+      // before this loop ever got a chance to see the next prefix.
+      const skipper = PREFIX_FLAG_SKIPPERS[wLower];
+      if (skipper) idx = skipper(words, idx);
       continue;
     }
     // Wave 10 (blind), AXIS 5 (structural context), Group 102: the
@@ -1607,12 +1634,14 @@ function resolveSegmentVerb(words, heredoc, fdOutOfScope, precededByPipe) {
   // verb to a SECONDARY one - which never reaches DESTRUCTION (rows
   // 8-13). Per-tool knowledge is required for correctness exactly when a
   // prefix has such a flag; the generic walk is a backstop only for
-  // prefixes that do not.
-  let candidateStart = resolved.index;
-  if (resolved.lastPrefixVerb === 'sudo') candidateStart = skipSudoFlags(words, resolved.index);
-  else if (resolved.lastPrefixVerb === 'nice') candidateStart = skipNiceFlags(words, resolved.index);
-  else if (resolved.lastPrefixVerb === 'env') candidateStart = skipEnvFlags(words, resolved.index);
-  else if (resolved.lastPrefixVerb === 'stdbuf') candidateStart = skipStdbufFlags(words, resolved.index);
+  // prefixes that do not. Group 103: resolveVerb's own loop already runs
+  // this same skipper INLINE for every prefix in the chain, so by the
+  // time execution reaches here this call is normally a no-op (the last
+  // prefix's flags are already behind `resolved.index`) - kept anyway as
+  // a defensive backstop, sharing the SAME `PREFIX_FLAG_SKIPPERS` table
+  // rather than a second, independently-drifting copy of the dispatch.
+  const skipper = PREFIX_FLAG_SKIPPERS[resolved.lastPrefixVerb];
+  const candidateStart = skipper ? skipper(words, resolved.index) : resolved.index;
   const candidates = walkCandidates(words, candidateStart);
   if (candidates.length === 0) return { verdict: 'NO_MATCH' };
 

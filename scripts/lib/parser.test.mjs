@@ -3520,3 +3520,33 @@ test('an assignment between two chained prefix verbs does not break the chain (G
   assert.equal(verdictOf('nice env FOO=bar rm -rf x'), 'DESTRUCTION');
   assert.equal(verdictOf('env FOO=bar rm -rf x'), 'DESTRUCTION');
 });
+
+// --- Group 103 (wave 10, blind) - Group 102's own fix was still not
+// enough: it let resolveVerb's main loop cross an ASSIGNMENT between two
+// chained prefix verbs, but a prefix's OWN FLAG in that same position
+// (`env -i FOO=bar nice -n 5 rm -rf x`, `sudo -u root env FOO=bar rm -rf
+// x`) still broke the chain, because each prefix's own flag table
+// (skipSudoFlags/skipNiceFlags/skipEnvFlags/skipStdbufFlags) only ran
+// ONCE, as a final sharpening dispatch AFTER resolveVerb had already
+// given up - never DURING the chain-walk itself, so it could not hand
+// control back to look for a FURTHER prefix verb past its own flags.
+// Fixed by running each prefix's own skipper INLINE the moment that
+// prefix is consumed (a single shared `PREFIX_FLAG_SKIPPERS` dispatch
+// table, reused by both the inline call and the final candidateStart
+// sharpening - one dispatch, not two independently-drifting copies) so
+// the SAME main loop can keep chaining: prefix -> its own flags -> an
+// assignment -> another prefix -> its own flags -> ... until nothing
+// more resolves. Joined-value forms (`-oL`, `-n5`) are unaffected -
+// unrecognized by the table (which only knows the BARE spelling, whose
+// value is a separate token) and fall through to the generic
+// isFlagShaped boolean-skip, same safe backstop as before.
+test('a prefix verb\'s own flag between two chained prefixes does not break the chain either (Group 103)', () => {
+  assert.equal(verdictOf('env -i FOO=bar nice -n 5 rm -rf x'), 'DESTRUCTION');
+  assert.equal(verdictOf('sudo -u root env FOO=bar rm -rf x'), 'DESTRUCTION');
+  assert.equal(verdictOf('stdbuf -oL nice -n5 rm -rf x'), 'DESTRUCTION');
+  assert.equal(verdictOf('sudo -u root nice -n 5 rm -rf x'), 'DESTRUCTION');
+  // Controls, unaffected.
+  assert.equal(verdictOf('sudo nice -n 5 rm -rf x'), 'DESTRUCTION');
+  assert.equal(verdictOf('nice sudo -u root rm -rf x'), 'DESTRUCTION');
+  assert.equal(verdictOf('sudo -u root rm -rf x'), 'DESTRUCTION');
+});

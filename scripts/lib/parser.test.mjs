@@ -3332,3 +3332,28 @@ test('mv --suffix/-S skips its own value, never counting it as a source (row 14)
     assert.deepEqual(result.findings.map((f) => f.target), targets, cmd);
   }
 });
+
+// --- Group 98 (defence round 10, axis-7 census row 6) - `isWindowsDrive
+// Path` (Set Z7, defence round 9) peeked at a word's own first 3
+// characters ONCE, at word start - the identical drive-letter signature
+// sitting AFTER a colon-bound flag prefix (`-Path:C:\temp\a.txt`) was
+// invisible, since the drive letter is real but not at index 0. Now
+// re-checked at EVERY backslash in the word, going sticky the moment it
+// fires (a real path, once started, does not stop being one mid-token).
+// Test written as a JS string literal (a real backslash character in
+// the source, read as a FILE by `node --test`) - never a shell-quoted
+// argument, this room's own probe trap, paid for three times now.
+// ships-if-missing: `Remove-Item -Path:C:\temp\a.txt` reports target
+// `C:tempa.txt` - a right verdict computed from a path that does not
+// exist.
+test('a Windows drive-letter path after a colon-bound flag prefix is not mangled either (row 6)', () => {
+  const result = parseCommand('Remove-Item -Path:C:\\temp\\a.txt');
+  assert.equal(result.verdict, 'DESTRUCTION');
+  assert.equal(result.findings[0].target, 'C:\\temp\\a.txt');
+
+  // Word-start form (Set Z7) is unaffected (control).
+  assert.equal(parseCommand('del C:\\temp\\a.txt').findings[0].target, 'C:\\temp\\a.txt');
+  // A bare relative backslash path, no drive letter anywhere, still
+  // follows bash's own escape rule (control).
+  assert.equal(parseCommand('rm foo\\bar.txt').findings[0].target, 'foobar.txt');
+});

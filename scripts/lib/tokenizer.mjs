@@ -286,7 +286,17 @@ export function tokenize(input) {
     // EXACTLY this signature; a bare relative backslash path with no
     // drive letter is not distinguishable from an ordinary (if unusual)
     // bash escape sequence and is NOT covered.
-    const isWindowsDrivePath = /^[A-Za-z]:\\/.test(input.slice(i, i + 3));
+    //
+    // MUTABLE, not word-start-only (axis-7 census row 6, defence round
+    // 10): the ORIGINAL fix only peeked at the word's own first 3
+    // characters, so the identical signature sitting AFTER a colon-bound
+    // flag prefix (`-Path:C:\temp\a.txt`) was invisible - the drive
+    // letter is real, just not at index 0. Re-checked at every
+    // backslash instead of once at word start: the moment the 2
+    // characters immediately before ANY backslash in this word are
+    // `<letter>:`, the flag goes sticky for the REST of the word - a
+    // real path, once started, does not stop being one mid-token.
+    let isWindowsDrivePath = /^[A-Za-z]:\\/.test(input.slice(i, i + 3));
     while (i < n) {
       const ch = input[i];
       if (ch === ' ' || ch === '\t' || ch === '\n' || ';|&><'.includes(ch)) break;
@@ -337,6 +347,9 @@ export function tokenize(input) {
       // quote branch below takes over unchanged (its own escaping rules
       // already apply - this is NOT ANSI-C quoting).
       if (ch === '$' && input[i + 1] === '"') { i++; continue; }
+      if (ch === '\\' && !isWindowsDrivePath && /^[A-Za-z]:$/.test(input.slice(i - 2, i))) {
+        isWindowsDrivePath = true;
+      }
       if (ch === '\\' && !isWindowsDrivePath) {
         if (input[i + 1] === '\n') { i += 2; continue; }
         if (i + 1 >= n) { errors.push('trailing backslash at end of command'); i = n; brokeOnError = true; break; }

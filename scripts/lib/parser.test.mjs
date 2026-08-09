@@ -3306,3 +3306,29 @@ test('a secondary candidate gets every OUT_OF_SCOPE admission a primary candidat
   // itself says so (control, proves no new false positive).
   assert.equal(verdictOf('cat rm'), 'NO_MATCH');
 });
+
+// --- Group 97 (defence round 10, axis-7 census row 14) - mv's `-S,
+// --suffix=SUFFIX` is already enumerated in MV_LONG_OPTIONS (so its
+// abbreviations already resolve, Set Z5) but had no "skip the flag AND
+// its own value token" site the way `-t`/`--target-directory` and
+// `-s`/`-r` on truncate already do - so a space-separated SUFFIX value
+// was miscounted as a SOURCE, corrupting the 3+-operand arity rule
+// (Set X1) into inventing sources that do not exist. CITED SOURCE (`mv
+// --help`, already RUN live): "-S, --suffix=SUFFIX  override the usual
+// backup suffix".
+// ships-if-missing: `mv --suffix ~bak a b` (a plain 2-source rename,
+// a->b, with a custom backup suffix) reports TWO fabricated targets
+// (`b/~bak`, `b/a`) instead of the real one (`b`) - the suffix value
+// and the real source both misread as sources under the 3+-arity rule.
+test('mv --suffix/-S skips its own value, never counting it as a source (row 14)', () => {
+  const cases = [
+    ['mv --suffix ~bak a b', ['b']],
+    ['mv -S ~bak a b', ['b']],
+    ['mv --suffix=~bak a b', ['b']],
+  ];
+  for (const [cmd, targets] of cases) {
+    const result = parseCommand(cmd);
+    assert.equal(result.verdict, 'DESTRUCTION', cmd);
+    assert.deepEqual(result.findings.map((f) => f.target), targets, cmd);
+  }
+});

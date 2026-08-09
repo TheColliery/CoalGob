@@ -535,6 +535,30 @@ function mvTargetDirectory(args) {
   return null;
 }
 
+// mv's OWN recoverability-adjacent option, CITED SOURCE `mv --help` RUN
+// live: "-S, --suffix=SUFFIX  override the usual backup suffix" - the
+// suffix VALUE is never a SOURCE. Axis-7 census row 14 (defence round
+// 10): already enumerated in MV_LONG_OPTIONS (so its abbreviations
+// already resolved, Set Z5) but had no "skip the flag AND its own value
+// token" site the way `-t`/`--target-directory` above already gets -
+// its space-separated value was miscounted as a SOURCE, corrupting the
+// 3+-operand arity rule (Set X1) into inventing sources that do not
+// exist. Mirrors mvTargetDirectory's own shape exactly.
+function mvSuffixSkipIdx(args) {
+  for (let i = 0; i < args.length; i++) {
+    const v = args[i].value;
+    if (v === '--') break;
+    if (v === '-S') return i + 1;
+    if (v.startsWith('--')) {
+      const { name, flagValue } = splitLongOption(v);
+      if (isLongOptionMatch(name, '--suffix', MV_LONG_OPTIONS)) {
+        return flagValue !== undefined ? -1 : i + 1;
+      }
+    }
+  }
+  return -1;
+}
+
 // ponytail: 62 lines at declaration (defence round 7, grown by W2's
 // target-directory recognition + --backup exemption) - over the 50-line
 // function-length signal. The target-directory branch and the backup
@@ -569,12 +593,14 @@ function analyzeMv(args) {
   }
 
   const targetDirectory = mvTargetDirectory(args);
+  const suffixSkipIdx = mvSuffixSkipIdx(args);
   let endOptions = false;
   const positional = [];
   for (let i = 0; i < args.length; i++) {
     const w = args[i];
     if (!endOptions && w.value === '--') { endOptions = true; continue; }
     if (targetDirectory && i === targetDirectory.skipIdx) continue;
+    if (i === suffixSkipIdx) continue;
     if (!endOptions && isFlagShaped(w.value)) continue;
     positional.push(w.value);
   }

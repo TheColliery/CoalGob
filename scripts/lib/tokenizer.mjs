@@ -41,6 +41,12 @@ export function tokenize(input) {
   const errors = [];
   const n = input.length;
   let i = 0;
+  // CITED SOURCE: RUN live on this host's bash (board #28 residue,
+  // defence round 10) - `if [[ true ]]; then ...` and
+  // `if (( 1 < 2 )); then ...` both execute correctly, confirming both
+  // grammars are real bash constructs whose `<`/`>` bind as
+  // comparison, never redirection, inside their own delimiters.
+  //
   // Depth of an open `[[ ... ]]` test - inside it, `<`/`>` are string
   // comparison, never a redirect. Keys on `[[` specifically; single `[ ]`
   // is unaffected.
@@ -49,7 +55,12 @@ export function tokenize(input) {
   // it, `>`/`<` are numeric comparison, never a redirect. Keys on the
   // exact two-char sequences `((`/`))` only - a general nested-parenthesis
   // balance is not attempted (matching the existing word-0-only treatment
-  // of a bare subshell).
+  // of a bare subshell). Judgment, not derivable from the source alone:
+  // RUN live also confirmed a genuinely NESTED paren inside `(( ))`
+  // (`echo $(( (1+2) * 3 ))`) executes fine in real bash - this
+  // tokenizer does not track that inner nesting at all, by the same
+  // word-0-only-subshell tradeoff already stated above, not because the
+  // source shows it doesn't exist.
   let parenDepth = 0;
 
   // A SEGMENT_SEPARATORS op resets both depths - an unbalanced `[[`/`((`

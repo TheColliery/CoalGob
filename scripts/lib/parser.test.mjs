@@ -3550,3 +3550,22 @@ test('a prefix verb\'s own flag between two chained prefixes does not break the 
   assert.equal(verdictOf('nice sudo -u root rm -rf x'), 'DESTRUCTION');
   assert.equal(verdictOf('sudo -u root rm -rf x'), 'DESTRUCTION');
 });
+
+// --- Group 104 (board #28 citation sweep, defence round 10) - `coproc` is
+// a bash reserved word (CITED SOURCE `compgen -k`, RUN live) missing from
+// SHELL_KEYWORDS, found by citing the set's own source rather than by a
+// destroyer wave. `coproc [NAME] command` (CITED SOURCE `help coproc`) -
+// the NAME-omitted form is a plain single-token skip and was a SILENT
+// NO_MATCH before this fix; the NAME-bearing form is a declared residual
+// (falls through to OUT_OF_SCOPE/unjudged via the existing secondary-
+// candidate scan, not silently missed).
+test('coproc (name-omitted) is recognized as a shell-keyword prefix (Group 104)', () => {
+  assert.equal(verdictOf('coproc rm -rf build'), 'DESTRUCTION');
+  assert.equal(verdictOf('coproc rmdir -rf build'), 'DESTRUCTION');
+});
+
+test('coproc with an explicit NAME is a declared unjudged residual, not silent (Group 104)', () => {
+  const withName = parseCommand('coproc MYPROC rm -rf build');
+  assert.equal(withName.verdict, 'OUT_OF_SCOPE');
+  assert.equal(withName.findings[0].kind, 'unjudged');
+});

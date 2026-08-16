@@ -98,14 +98,43 @@ const DESTRUCTION_VERBS = new Set([
 const PREFIX_VERBS = new Set([
   'sudo', 'env', 'nice', 'time', 'command', 'nohup', 'setsid', 'stdbuf', 'doas', 'ionice', 'exec',
 ]);
-// The set: every bash compound-command keyword that can occupy word 0 and
-// take no flags/arguments of its own before the real command (a single-
-// token skip, unlike PREFIX_VERBS which may consume a following duration/
-// flag). `case` is deliberately NOT here - its pattern label (`a)`) sits
-// between the keyword and the command, which this single-token skip
-// cannot resolve; it is handled at classifyVerb instead, where it
-// declares OUT_OF_SCOPE/unjudged rather than joining this set.
-const SHELL_KEYWORDS = new Set(['do', 'then', 'else', 'elif', '!', 'if', 'while', 'until']);
+// CITED SOURCE: `compgen -k`, RUN live on this host's bash (board #28
+// residue, defence round 10) - bash's reserved-word list in full: if,
+// then, else, elif, fi, case, esac, for, select, while, until, do, done,
+// in, function, time, {, }, !, [[, ]], coproc. The source answers "what
+// IS a reserved word"; it does not say which of them belong in THIS set,
+// and that boundary is judgment, stated per member:
+// - Included (single-token skip, real command follows immediately): do,
+//   then, else, elif, !, if, while, until, coproc (added this round - see
+//   below).
+// - `case` deliberately EXCLUDED - its pattern label (`a)`) sits between
+//   the keyword and the command, which a single-token skip cannot
+//   resolve; handled at classifyVerb instead, where it declares
+//   OUT_OF_SCOPE/unjudged rather than joining this set.
+// - `for`/`select`/`in` EXCLUDED - not skippable one token at a time
+//   (their own next tokens are a loop variable or `((`, never the
+//   command); `for` gets its own forward-scan branch in resolveVerb
+//   instead (see the `for` branch below).
+// - `fi`/`esac`/`done` EXCLUDED - block TERMINATORS, never precede a
+//   command.
+// - `{`/`}` EXCLUDED - block delimiters, not word-0 constructs this walk
+//   resolves through.
+// - `[[`/`]]` EXCLUDED - test operators, handled by the tokenizer's own
+//   bracketDepth (see tokenizer.mjs), not this word-level walk.
+// - `time` EXCLUDED from here - already in PREFIX_VERBS (it takes no
+//   flags of its own before the real command either, but the room's
+//   existing PREFIX_VERBS/SHELL_KEYWORDS split predates this citation
+//   pass and moving it is a needless churn for zero behavior change).
+// - `coproc` ADDED this round: `coproc [NAME] command [redirections]`
+//   (CITED SOURCE: `help coproc`, RUN live this round) - the common,
+//   NAME-omitted form (`coproc rm -rf build`) is a plain single-token
+//   skip and was a SILENT NO_MATCH before this fix (found via this exact
+//   citation sweep, same shape as MEMORY.md's bracketDepth precedent).
+//   The NAME-bearing form (`coproc MYPROC rm -rf build`) is NOT resolved
+//   by a single-token skip - it now falls through to the existing
+//   secondary-candidate scan and reports OUT_OF_SCOPE/unjudged (upgraded
+//   from silent NO_MATCH), a declared residual gap, not a silent one.
+const SHELL_KEYWORDS = new Set(['do', 'then', 'else', 'elif', '!', 'if', 'while', 'until', 'coproc']);
 const TIMEOUT_VERB = 'timeout';
 const ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const DURATION_RE = /^[\d.]+[smhd]?$/;
@@ -858,16 +887,28 @@ function analyzeMoveItem(args) {
 
 // --- a listed destruction verb (rm/rmdir/unlink/truncate/del/Remove-Item) --
 
-// The set: PowerShell switch-parameter value syntax. Covered - bare
-// presence (means true), an unambiguous prefix abbreviation (-WhatIf
-// only), and an explicit-value form (`:$true`/`:true`/`:1` = ON,
-// `:$false`/`:false`/`:0` = OFF, NOT a no-op). Boundary, stated: an
-// explicit value outside this recognized set (a variable reference like
-// `-WhatIf:$SomeVar`) is NOT resolved - it defaults to NOT exempt, the
-// safe direction when this parser cannot tell which way the switch
-// actually resolves at runtime. Shared across every switch this parser
-// binds (-WhatIf, -Force) - the value grammar is PowerShell's, not the
-// individual switch's.
+// CITED SOURCE: RUN live on this host (Windows PowerShell 5.1.26100.9168,
+// `[switch]$WhatIf` test parameter bound directly - board #28 residue,
+// defence round 10). Live result, and it CORRECTS this set's own prior
+// comment: only `-WhatIf:$true`/`-WhatIf:$false` (and bare `-WhatIf`
+// presence) actually BIND. `-WhatIf:1`, `-WhatIf:0`, `-WhatIf:'true'`,
+// `-WhatIf:'1'` (bareword or quoted, int or string) all THROW a
+// ParameterBindingArgumentTransformationException and the cmdlet never
+// executes AT ALL - PowerShell binds every parameter before any cmdlet
+// body runs, so a value that fails to bind has zero destructive effect
+// either way this parser classifies it. `'true'`/`'1'` in this set are
+// therefore DEAD ENTRIES against everything verified live: no input that
+// matches them ever reaches a real Remove-Item/Move-Item execution.
+// NOT removed - PowerShell Core/7+ is UNVERIFIED here (`pwsh` absent on
+// this host) and may bind more permissively than 5.1; keeping them is a
+// no-cost defense-in-depth against an edition difference this citation
+// pass could not check, not a claim they correspond to real syntax on
+// the verified host. Boundary, stated: an explicit value outside this
+// set (a variable reference like `-WhatIf:$SomeVar`) is NOT resolved -
+// it defaults to NOT exempt, the safe direction when this parser cannot
+// tell which way the switch actually resolves at runtime. Shared across
+// every switch this parser binds (-WhatIf, -Force) - the value grammar
+// is PowerShell's, not the individual switch's.
 const SWITCH_TRUE_VALUES = new Set(['$true', 'true', '1']);
 
 // CITED SOURCE: `(Get-Command Remove-Item).Parameters.Keys`, RUN live on

@@ -4,17 +4,30 @@ All notable changes to CoalGob are documented here. Format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.0-beta.1] - 2026-09-21
+
+**Pre-release — the first public release.** What ships is the command-classifier engine (parser and
+tokenizer) and its test suite; there is no hook, skill, command, or interception surface yet. The
+canonical version is `.claude-plugin/plugin.json`. The classifier's measured ceiling is stated, as
+counts only, in the README's "Known ceiling" section.
+
 ### Added
 
-- Repo founded — org #8 of the TheColliery series, concept stage. License, NOTICE, and plugin
-  manifest only; no hooks, skills, or interception code yet.
+- Repo founded — org #8 of the TheColliery series, at concept stage. License, NOTICE, and plugin
+  manifest only; no hooks, skills, or interception code.
+- Public-repo skeleton for the beta: `.github/` (CI on Linux, Windows and macOS across Node 22 and 24,
+  CodeQL, Scorecard, coverage, markdownlint, Dependabot with CI-gated auto-merge, issue templates),
+  `SECURITY.md`, `PRIVACY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`. `SECURITY.md` says plainly that
+  no scan has been run (there is no skill or dist to scan) and that the 90 commits before launch are
+  unsigned. The README gains a status statement matching the manifest, a Compatibility section, and
+  the Known ceiling section. The manifest description now states the beta scope.
 - `scripts/lib/parser.mjs` — a pure Bash-command classifier for the interception design's detection
   path. Three-valued verdict, never boolean: `DESTRUCTION` / `OUT_OF_SCOPE` (something here could
   destroy — a wrapper, a named direct destroyer this parser deliberately does not route, or a
   construct it cannot see into) / `NO_MATCH` (this parser's closed verb list did not match — **not a
   safety claim**). No filesystem access — `mv` over a target it cannot itself verify returns a
-  `conditional` flag for the caller to `stat`. 96 tests in `scripts/lib/parser.test.mjs`, run via
-  `scripts/test.mjs` (`node --test`, explicit file list). No emitter, no hook wiring, no capability
+  `conditional` flag for the caller to `stat`. Tests in `scripts/lib/parser.test.mjs` (96 at this unit), run via
+  `scripts/test.mjs` (`node --test`, explicit file list); the suite is 354 tests at this release. No emitter, no hook wiring, no capability
   probe, no trash routing yet — this unit is the parser alone.
 - **Round 2 (INSPECT-parser-2026-08-04, 1 CRITICAL + 4 HIGH + 6 of 11 MEDIUM + 3 of 4 LOW fixed):**
   the verdict formerly named `NONE` is renamed `NO_MATCH` — it was reached by 15+ shapes (`eval`,
@@ -107,7 +120,7 @@ real delete. `ad57e4c` closed a module-header sink list naming six entries after
 added five more. Standing rule from here: a comment or header describing coverage is updated in the
 SAME commit that changes the coverage, never after.
 
-**Deliberately absent, each owed at a stated trigger:**
+**Deliberately absent, each owed at a stated trigger (as of this release):**
 
 - `hooks/`, `skills/`, `agents/`, `commands/`, interception code, `scripts/build-plugin.mjs`,
   `scripts/verify.mjs` — no hook, skill, or plugin surface exists yet; owed once the interception
@@ -117,12 +130,12 @@ SAME commit that changes the coverage, never after.
   load-bearing field (`plugins[0].source`) points at a dist that does not exist ships a lie; owed
   together, with the first build.
 - `platform-configs/` — no hook reads config yet; owed with the first hook.
-- `.github/` (CI, CodeQL, Scorecard, dependabot, issue templates) — no remote; these produce no
-  signal against zero code; owed at first push.
-- `SECURITY.md`, `PRIVACY.md`, `CONTRIBUTING.md` — would describe a product that does not exist yet;
-  owed at first push.
 - `.githooks/` — `.gitattributes`' LF rule anticipates this dir (matches CoalMine's shape, not
   CoalBoard's, per `0c00c0f` — "one flock, one color" costs less than a hand-trimmed variant) but it
   is inert until the dir exists; owed at the unit that adds `scripts/verify.mjs` — the public-doc SSoT
   sync gate (blueprint §13) needs a gate script to run and a stable §1 to check against, and neither
-  exists yet (this unit's own parser churned §1's identity sentence twice).
+  exists yet (this unit's own parser churned §1's identity sentence twice). The CI workflow's verify
+  step skips cleanly until `scripts/verify.mjs` exists.
+
+No longer absent: `.github/` and `SECURITY.md` / `PRIVACY.md` / `CONTRIBUTING.md` were both owed at first
+push; that trigger fired with this release and they are listed under Added above.

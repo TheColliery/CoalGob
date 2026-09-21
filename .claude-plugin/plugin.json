@@ -1,7 +1,7 @@
 {
   "name": "coalgob",
   "version": "0.1.0-beta.1",
-  "description": "CoalGob — checks every destructive command an agent runs, per operation, for whether it already lands somewhere recoverable (the OS's own trash, or a destroyer that already snapshotted it), and only blocks it when it would not, handing back the recoverable form of the same destruction. Concept stage: nothing is built or shipped yet.",
+  "description": "CoalGob — checks every destructive command an agent runs, per operation, for whether it already lands somewhere recoverable (the OS's own trash, or a destroyer that already snapshotted it), and only blocks it when it would not, handing back the recoverable form of the same destruction. Beta: the command-classifier engine (parser and tokenizer) and its test suite ship; there is no hook, skill, command, or interception surface yet.",
   "author": {
     "name": "HetCreep"
   },

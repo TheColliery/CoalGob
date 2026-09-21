@@ -1,26 +1,17 @@
 name: CI
 
+# NAMED DIVERGENCE from the published-code template: no `paths-ignore` here. A workflow skipped by
+# path filtering leaves its checks "Pending" and a PR requiring them is blocked from merging
+# (GitHub's own docs, manage-workflow-runs/skip-workflow-runs.md, as quoted at source in
+# CoalMine's ci.yml, CWK-058). A ruleset requiring `all-green` would then block every docs-only PR
+# permanently. This room's suite runs in under a second with no install step, so the saved minute
+# is worth nothing here. OWED when CI grows expensive enough to care: CoalMine's `changes` job +
+# `DOCS_GLOBS` env, not a path filter.
 on:
   push:
     branches: [main]
-    paths-ignore:
-      # skip verify/test only for NON-shipped docs — a SHIPPED markdown artifact (skills/**/SKILL.md, commands/*.md) MUST run CI (verify checks dist-sync)
-      - 'README.md'
-      - 'CHANGELOG.md'
-      - 'CONTRIBUTING.md'
-      - 'PRIVACY.md'
-      - 'SECURITY.md'
-      - 'LICENSE'
   pull_request:
     branches: [main]
-    paths-ignore:
-      # skip verify/test only for NON-shipped docs — a SHIPPED markdown artifact (skills/**/SKILL.md, commands/*.md) MUST run CI (verify checks dist-sync)
-      - 'README.md'
-      - 'CHANGELOG.md'
-      - 'CONTRIBUTING.md'
-      - 'PRIVACY.md'
-      - 'SECURITY.md'
-      - 'LICENSE'
 
 permissions:
   contents: read

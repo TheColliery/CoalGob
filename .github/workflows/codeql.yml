@@ -1,18 +1,14 @@
 name: CodeQL
 
+# NAMED DIVERGENCE from the published-code template: no `paths-ignore` here, for the same reason as
+# ci.yml (a path-skipped workflow leaves its `analyze` check Pending forever, which blocks any PR
+# under a ruleset that requires it). A docs-only run finds no JS and costs seconds. OWED when CI
+# grows expensive enough to care: a `changes` job, not a path filter.
 on:
   push:
     branches: [main]
-    paths-ignore:
-      # CodeQL analyzes js/ts only — NO markdown needs a security scan, so skip ALL docs (a doc-only commit doesn't run CodeQL). Shipped SKILL.md/commands consistency is ci.yml's job (verify dist-sync), not CodeQL's.
-      - '**.md'
-      - 'LICENSE'
   pull_request:
     branches: [main]
-    paths-ignore:
-      # CodeQL analyzes js/ts only — NO markdown needs a security scan, so skip ALL docs (a doc-only commit doesn't run CodeQL). Shipped SKILL.md/commands consistency is ci.yml's job (verify dist-sync), not CodeQL's.
-      - '**.md'
-      - 'LICENSE'
   schedule:
     - cron: '0 6 * * 1'
 

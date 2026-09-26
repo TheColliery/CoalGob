@@ -1,0 +1,8 @@
+# Internal governance + design notes — machine-local, never shipped to the public repo
+CLAUDE.md
+MEMORY*.md
+AGENTS.md
+.claude/
+.agents/
+COALGOB_BLUEPRINT.md
+COALGOB_BLUEPRINT.pre-edit.md

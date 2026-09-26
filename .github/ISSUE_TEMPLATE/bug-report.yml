@@ -1,0 +1,35 @@
+name: "Bug report"
+description: "CoalGob misbehaves"
+title: "[bug] <component>: <one-line summary>"
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - "parser (scripts/lib/parser.mjs)"
+        - "tokenizer (scripts/lib/tokenizer.mjs)"
+        - "test suite (scripts/test.mjs, scripts/lib/parser.test.mjs)"
+        - "CI / repo tooling"
+        - docs
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: "CoalGob version + platform"
+      placeholder: "vX.Y.Z · Node 24 on Windows 11"
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce + what happened
+      description: "For a wrong verdict: the exact command string you passed to parseCommand and the exact verdict it returned. Exact commands/inputs and exact output."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior

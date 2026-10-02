@@ -6,8 +6,8 @@
 > deliberately fill instead of leaving open.*
 
 **Beta. The command-classifier engine ships; the delete guard does not — yet.** CoalGob's parser and
-tokenizer, with their test suite, are here and working. There is no hook, skill, command, or
-interception surface, so nothing installs, blocks, or reroutes anything today.
+tokenizer, with their test suite, are here and working. There is no interception hook, skill, command, or
+agent, so nothing installs, blocks, or reroutes anything today.
 
 ![license](https://img.shields.io/badge/license-Apache_2.0-blue)
 ![status](https://img.shields.io/badge/status-beta-orange)
@@ -44,7 +44,7 @@ do would turn CoalGob into a general command classifier instead of a destruction
 
 ## Status
 
-**Pre-release `0.1.0-beta.1`.** The shipped surface is the classifier engine and nothing else:
+**Pre-release `0.1.0-beta.2`.** The shipped surface is the classifier engine and nothing else:
 
 - **Ships:** `scripts/lib/tokenizer.mjs` and `scripts/lib/parser.mjs` — a pure function that takes a
   Bash-style command string and returns a three-valued verdict — and the test suite that pins it

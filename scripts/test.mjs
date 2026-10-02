@@ -13,6 +13,9 @@ const TEST_FILES = [
   'lib/parser.test.mjs',
   'secret-scan.test.mjs',
   'secret-gate.test.mjs',
+  'release-notes.test.mjs',
+  'verify-release-shape.test.mjs',
+  'lib/release-shape.test.mjs',
 ];
 
 const resolved = TEST_FILES.map((f) => path.join(here, f));

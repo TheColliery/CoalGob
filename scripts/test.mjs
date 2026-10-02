@@ -11,6 +11,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 
 const TEST_FILES = [
   'lib/parser.test.mjs',
+  'secret-scan.test.mjs',
+  'secret-gate.test.mjs',
 ];
 
 const resolved = TEST_FILES.map((f) => path.join(here, f));

@@ -136,7 +136,18 @@ const PREFIX_VERBS = new Set([
 //   from silent NO_MATCH), a declared residual gap, not a silent one.
 const SHELL_KEYWORDS = new Set(['do', 'then', 'else', 'elif', '!', 'if', 'while', 'until', 'coproc']);
 const TIMEOUT_VERB = 'timeout';
-const ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/;
+// CITED SOURCE: RUN live on this host's bash 5.3.15 (CWK-177; harmless
+// commands only). An assignment word before a command is `NAME=value`,
+// `NAME+=value` (append) or `NAME[sub]=value`: `FOO=a; FOO+=b printenv FOO`
+// prints `FOO=ab`, and `FOO+=1 true` and `a[0]=1 true` both run `true`
+// (exit 0); the control `FOO-x=1 true` is `command not found`, i.e. a word
+// that is not an assignment is the command NAME. The source answers "is
+// this word an assignment prefix"; judgment still enters at the subscript:
+// `[^\]]*` accepts any subscript text without modelling bash's own
+// arithmetic-subscript grammar, which only widens WHICH words are skipped
+// as prefix (never what is reported), and the walk still classifies the
+// real verb behind them.
+const ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?\+?=/;
 const DURATION_RE = /^[\d.]+[smhd]?$/;
 // Genuinely raw-binary executable extensions ONLY - stripping these is a
 // real precision gain (`rm.exe` really is the same program as `rm`,
@@ -476,6 +487,23 @@ function classifyRedirectOp(op) {
 
 // --- verb resolution (ruling: the verb can be prefixed) ---------------------
 
+// CITED SOURCE: RUN live on this host's Windows PowerShell 5.1.26100.9549
+// (CWK-177; harmless bodies only). The `foreach` STATEMENT takes a
+// parenthesised head (`foreach ($i in 1..2) { $i }`); `foreach { 1 }` at the
+// start of a statement is a parse error (the head is mandatory there); and
+// `foreach` with braces directly, after a pipe, is the alias of
+// ForEach-Object (`Get-Alias foreach` -> ForEach-Object). The source answers
+// "is this `foreach` the statement keyword or the cmdlet alias"; the
+// parenthesised head is the discriminator: that form is the statement
+// keyword, a different construct from the cmdlet. Judgment still enters at
+// the glued spelling `foreach(`, accepted because PowerShell allows no
+// space before the head.
+function isPsForeachStatement(words, idx) {
+  const w = words[idx].value.toLowerCase();
+  if (w.startsWith('foreach(')) return true;
+  return w === 'foreach' && idx + 1 < words.length && words[idx + 1].value.startsWith('(');
+}
+
 // Consumes ONLY the recognized prefix chain (leading assignments, then a
 // run of PREFIX_VERBS/timeout) and stops - it never tries to classify what
 // comes after. What comes after (flags, more assignments, the real verb)
@@ -549,6 +577,14 @@ function resolveVerb(words) {
     // past it. The `for` branch below already checks `.quoted` on its
     // own `do` lookahead; this branch, four lines above it, did not.
     if (!words[idx].quoted && SHELL_KEYWORDS.has(wLower)) {
+      idx++;
+      consumedPrefix = true;
+      continue;
+    }
+    // CWK-177: the PowerShell `foreach` STATEMENT is a keyword like `if`
+    // (see isPsForeachStatement for the source), so it is skipped the same
+    // way and a listed verb in its body is reached by the generic walk.
+    if (!words[idx].quoted && isPsForeachStatement(words, idx)) {
       idx++;
       consumedPrefix = true;
       continue;

@@ -3569,3 +3569,147 @@ test('coproc with an explicit NAME is a declared unjudged residual, not silent (
   assert.equal(withName.verdict, 'OUT_OF_SCOPE');
   assert.equal(withName.findings[0].kind, 'unjudged');
 });
+
+// --- Group 105 (CWK-177, a peer guard's fixes read by CLASS against this
+// guard) - PINS for classes that already resolved correctly but had no
+// test naming them. Each row was fed to parseCommand as a STRING (never
+// executed). Classes: a quoted/heredoc/data context must neither hide a
+// real verb behind it nor be read as one; a verb assembled from quoted or
+// escaped fragments is still that verb; a verb is found by COMMAND WORD,
+// not by a text match on the line (a word that merely contains or quotes
+// `dd`/`rm` is data); a destroyer behind sudo/doas/env/VAR= prefixes, with
+// its operands in either order, is still named; a shell or interpreter
+// behind a launcher is the declared boundary, never silently opened ---
+test('data and quote context neither hides a real verb nor becomes one (Group 105)', () => {
+  const cases = [
+    ['echo "it\'s" ; rm -rf x', 'DESTRUCTION'],
+    ['echo \'a"b\' ; rm -rf x', 'DESTRUCTION'],
+    ['VAR="rm -rf x" ; ls -n', 'NO_MATCH'],
+    ['printf \'{"cmd":"rm -rf x"}\' | jq .', 'NO_MATCH'],
+    ['echo "rm -rf build" > notes.txt', 'DESTRUCTION'],
+    ['cat > f <<\'EOF\'\nrm -rf x\nEOF\nls -n', 'DESTRUCTION'],
+    ['git commit -m "rm -rf build"', 'NO_MATCH'],
+    ['grep "rm -rf" file', 'NO_MATCH'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});
+
+test('a verb assembled from quoted or escaped fragments is still that verb (Group 105)', () => {
+  const cases = [
+    ["r''m -rf x", 'DESTRUCTION'],
+    ['"r"m -rf x', 'DESTRUCTION'],
+    ['r\\m -rf x', 'DESTRUCTION'],
+    ["'rm' -rf x", 'DESTRUCTION'],
+    ['rm \\\n-rf x', 'DESTRUCTION'],
+    ['r\\\nm -rf x', 'DESTRUCTION'],
+  ];
+  for (const [cmd, expected] of cases) {
+    assert.equal(verdictOf(cmd), expected, cmd);
+  }
+});
+
+test('dd is found by command word, with either operand order, behind a prefix, and is data when it is only a word (Group 105)', () => {
+  const named = [
+    'dd if=/dev/zero of=/dev/sda',
+    'dd if=./disk.img of=/dev/sdb',
+    'dd if="/dev/zero" of=/dev/sda',
+    'dd of=/dev/sda if=/dev/zero',
+    'sudo dd if=/dev/zero of=/dev/sda',
+    'cat x | dd of=/dev/sda',
+  ];
+  for (const cmd of named) {
+    assert.equal(verdictOf(cmd), 'OUT_OF_SCOPE', cmd);
+    assert.equal(kindOf(cmd), 'unrouted', cmd);
+  }
+  for (const cmd of ['echo dd if=/dev/zero', 'grep dd if=/dev/zero file', 'add if=x', 'truncated -s 0 f']) {
+    assert.equal(verdictOf(cmd), 'NO_MATCH', cmd);
+  }
+});
+
+test('a shell or interpreter behind a launcher, or fed by a pipe, is the declared boundary (Group 105)', () => {
+  const declared = [
+    "bash --noprofile -c 'rm -rf x'",
+    'sh -c "rm -rf x"',
+    "echo 'rm -rf x' | sh",
+    "echo 'rm -rf x' | bash",
+    "printf 'rm -rf x' | bash -s",
+    "sudo bash -c 'rm -rf x'",
+    'env bash -c "rm x"',
+    "nice -n 5 sh -c 'rm x'",
+    "timeout 5 bash -c 'rm x'",
+    "doas sh -c 'rm x'",
+  ];
+  for (const cmd of declared) {
+    assert.equal(verdictOf(cmd), 'OUT_OF_SCOPE', cmd);
+    assert.equal(kindOf(cmd), 'declared', cmd);
+  }
+  assert.equal(kindOf("bash <<< 'rm -rf x'"), 'unjudged');
+  assert.equal(kindOf('cat <<EOF | bash\nrm -rf x\nEOF'), 'unjudged');
+});
+
+// --- Group 106 (CWK-177, append and subscripted assignment words) - an
+// assignment word before the command is `NAME=value`, `NAME+=value`
+// (append) or `NAME[sub]=value`; ASSIGNMENT_RE knew only the first, so a
+// verb behind an append or subscripted assignment was read as a command
+// NAME and the real verb behind it was never reached. CITED SOURCE, RUN
+// live on this host's bash 5.3.15 (scratchpad probe, harmless commands):
+// `FOO=a; FOO+=b printenv FOO` prints `FOO=ab` (the append form is an
+// assignment prefix and the command runs); `a[0]=1 true` and `FOO+=1 true`
+// both exit 0 (the command runs); the control `FOO-x=1 true` is `command
+// not found` (a word that is not an assignment is the command name) ---
+// ships-if-missing: `FOO+=1 rm -rf x` deletes `x` for real while this
+// parser reported NO_MATCH.
+test('an append or subscripted assignment prefix is skipped like NAME=value (Group 106)', () => {
+  const resolved = [
+    'FOO+=1 rm -rf x',
+    'FOO=1 BAR+=2 rm -rf x',
+    'FOO+=bar nice rm -rf x',
+    'sudo FOO+=1 rm -rf x',
+    'env FOO+=1 rm -rf x',
+    'a[0]=1 rm -rf x',
+    'FOO+= rm -rf x',
+  ];
+  for (const cmd of resolved) {
+    const r = parseCommand(cmd);
+    assert.equal(r.verdict, 'DESTRUCTION', cmd);
+    assert.equal(r.findings[0].verb, 'rm', cmd);
+    assert.equal(r.findings[0].target, 'x', cmd);
+  }
+  assert.equal(verdictOf('GIT_CONFIG_PARAMETERS+=x git clean -fd'), 'OUT_OF_SCOPE');
+  assert.equal(kindOf('GIT_CONFIG_PARAMETERS+=x git clean -fd'), 'unrouted');
+});
+
+test('only a real assignment word is skipped: a non-assignment word is the command name, and an operand is still an operand (Group 106)', () => {
+  // `FOO-x=1` is not an assignment (bash: command not found), so nothing here runs rm.
+  assert.equal(verdictOf('FOO-x=1 rm -rf x'), 'NO_MATCH');
+  // After the verb, an assignment-shaped word is an ordinary operand and is still the at-risk path.
+  const r = parseCommand('rm -rf FOO+=1');
+  assert.equal(r.verdict, 'DESTRUCTION');
+  assert.equal(r.findings[0].target, 'FOO+=1');
+});
+
+// --- Group 107 (CWK-177, the PowerShell foreach STATEMENT) - a compound
+// statement whose body runs a direct destruction verb, the same class as
+// the bash `if`/`while`/`do` words already skipped at word 0. CITED
+// SOURCE, RUN live on this host's Windows PowerShell 5.1.26100.9549: the
+// statement form `foreach ($i in 1..2) { $i }` takes a parenthesised head;
+// `foreach { 1 }` at the start of a statement is a parse error (the head
+// is mandatory there); the same word after a pipe, with braces directly,
+// is the alias of ForEach-Object. So `foreach` followed by `(` (or glued
+// as `foreach(`) is the statement keyword. A body that holds no listed
+// verb is untouched ---
+// ships-if-missing: a listed verb inside the statement's body was never
+// looked at, because `foreach` was read as an unknown command name.
+test('a foreach statement with a parenthesised head is skipped like if/while, so a listed verb in its body is reached (Group 107)', () => {
+  const reached = [
+    'foreach ($f in Get-ChildItem) { Remove-Item $f }',
+    'foreach($f in $files) { Remove-Item $f }',
+    'foreach ($x in $list) { del $x }',
+  ];
+  for (const cmd of reached) {
+    assert.notEqual(verdictOf(cmd), 'NO_MATCH', cmd);
+  }
+  assert.equal(verdictOf('foreach ($f in $files) { Write-Host $f }'), 'NO_MATCH');
+});

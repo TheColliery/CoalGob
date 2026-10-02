@@ -49,7 +49,7 @@ do would turn CoalGob into a general command classifier instead of a destruction
 - **Ships:** `scripts/lib/tokenizer.mjs` and `scripts/lib/parser.mjs` — a pure function that takes a
   Bash-style command string and returns a three-valued verdict — and the test suite that pins it
   (`node scripts/test.mjs`). It never executes the command, reads a file, or opens a connection.
-- **Does not exist yet:** a hook, a skill, a command, an agent, any interception or emitter code,
+- **Does not exist yet:** an interception hook, a skill, a command, an agent, any interception or emitter code,
   trash routing, a capability probe, and a `plugin/` distribution. You cannot install CoalGob to guard
   anything today. Each absence and the trigger it is owed at is recorded in
   [CHANGELOG.md](CHANGELOG.md).
@@ -87,8 +87,10 @@ map for whoever wants to get past it.
   at one place and not at its sibling. **17 of the 18 are closed; 1 remains open.** The audit is a
   lower bound: a second pass from a different starting angle could find more.
 - **Blind attack rounds** — fresh attackers given only the parser and its published scope — have
-  found further root causes. **At least 9 are known and open** (7 from one round, at least 2 from a
-  later one; one of the 7 is the open site above).
+  found further root causes. **At least 13 are known and open** (7 from one round, at least 2 from a
+  later one, and 4 from a class-by-class read of a peer guard's fixes; one of the 7 is the open site
+  above). Of the 4, one is the leftover of a class closed in that same read and three sit in families
+  this guard declares out of scope.
 
 **The detail publishes when the open root causes close.** Until then, treat a `NO_MATCH` as "this
 engine's list did not match", never as "safe". This is a published ceiling on a guard that does not

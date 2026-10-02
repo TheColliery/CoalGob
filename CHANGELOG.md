@@ -4,6 +4,28 @@ All notable changes to CoalGob are documented here. Format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.0-beta.2] - 2026-10-02
+
+The commit and push gate now scans for secrets, releases are posted by one workflow, and two silent misses in the command classifier are closed.
+
+**Pre-release.** The shipped surface is unchanged in kind: the command-classifier engine (parser and tokenizer) and its test suite, with no hook, skill, command, or interception surface yet. The canonical version is `.claude-plugin/plugin.json`. A beta tag gets no Release of its own; the repository's one pre-release Release is the launch-form Release of `0.1.0-beta.1`.
+
+### Added
+
+- A local git gate for the contributor's machine: `.githooks/pre-commit` and `.githooks/pre-push` (identical bytes) run the house secret scan (`scripts/secret-gate.mjs` over `scripts/lib/secret-scan.mjs`, with their tests), then the suite. Pre-commit scans the staged tree; pre-push also scans every commit message, tag message and added line in the pushed range. It is enabled once per clone with `git config core.hooksPath .githooks`. `f3f3f90`
+- The release workflow `.github/workflows/create-release.yml` is the sole creator of GitHub Releases, with `scripts/release-notes.mjs`, `scripts/verify-release-shape.mjs`, `scripts/lib/release-shape.mjs` and their tests. It derives the Release title and body from this file, and a pre-release tag push posts nothing. `cf39793`
+- `.gitbook.yaml` and `SUMMARY.md` for the docs site, publishing `README.md` and `CHANGELOG.md` only.
+
+### Changed
+
+- The suite grows from 354 to 445 tests (the secret scan, the release scripts, and the classifier tests below).
+- The README's "Known ceiling" counts are re-derived from the internal census; the detail still publishes when the open root causes close.
+- `CONTRIBUTING.md` and `SECURITY.md` describe the gate and the scan.
+
+### Fixed
+
+- Two silent misses in the command classifier, found by reading a peer guard's fixes class by class: a command word preceded by an append-style or subscripted assignment now classifies, and a PowerShell `foreach` statement no longer hides a destruction verb in its body (it is now reported `OUT_OF_SCOPE`, never silent). Pins are added for classes that already held. `df6a581`
+
 ## [0.1.0-beta.1] - 2026-09-21
 
 **Pre-release — the first public release.** What ships is the command-classifier engine (parser and
@@ -120,7 +142,7 @@ real delete. `ad57e4c` closed a module-header sink list naming six entries after
 added five more. Standing rule from here: a comment or header describing coverage is updated in the
 SAME commit that changes the coverage, never after.
 
-**Deliberately absent, each owed at a stated trigger (as of this release):**
+**Deliberately absent, each owed at a stated trigger (as of 0.1.0-beta.2):**
 
 - `hooks/`, `skills/`, `agents/`, `commands/`, interception code, `scripts/build-plugin.mjs`,
   `scripts/verify.mjs` — no hook, skill, or plugin surface exists yet; owed once the interception
@@ -130,12 +152,12 @@ SAME commit that changes the coverage, never after.
   load-bearing field (`plugins[0].source`) points at a dist that does not exist ships a lie; owed
   together, with the first build.
 - `platform-configs/` — no hook reads config yet; owed with the first hook.
-- `.githooks/` — `.gitattributes`' LF rule anticipates this dir (matches CoalMine's shape, not
-  CoalBoard's, per `0c00c0f` — "one flock, one color" costs less than a hand-trimmed variant) but it
-  is inert until the dir exists; owed at the unit that adds `scripts/verify.mjs` — the public-doc SSoT
-  sync gate (blueprint §13) needs a gate script to run and a stable §1 to check against, and neither
-  exists yet (this unit's own parser churned §1's identity sentence twice). The CI workflow's verify
-  step skips cleanly until `scripts/verify.mjs` exists.
+- `scripts/verify.mjs` and the public-doc SSoT sync gate (blueprint §13) — the `.githooks/` pair now exists
+  (it runs the secret gate and the suite), but its verify line is guarded: it runs `scripts/verify.mjs` only
+  when that file exists, a named divergence from the canon hook, which runs it unconditionally. Owed back to the
+  canon line at the unit that adds `scripts/verify.mjs`; the sync gate needs a gate script to run and a stable
+  §1 to check against, and neither exists yet. The CI workflow's verify step skips cleanly until then.
 
 No longer absent: `.github/` and `SECURITY.md` / `PRIVACY.md` / `CONTRIBUTING.md` were both owed at first
-push; that trigger fired with this release and they are listed under Added above.
+push; that trigger fired with 0.1.0-beta.1 and they are listed under its Added above. `.githooks/` was owed
+at the unit that adds `scripts/verify.mjs`; it landed earlier, with the secret gate, in 0.1.0-beta.2.

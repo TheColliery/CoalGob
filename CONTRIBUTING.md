@@ -24,6 +24,8 @@ Keep the verification gate green before and after making edits:
 node scripts/test.mjs           # runs the zero-dependency test runner (node --test, explicit file list)
 ```
 
+The repo also carries a local git gate in `.githooks/`: `pre-commit` and `pre-push` run the house secret scan (`scripts/secret-gate.mjs`), then the same suite. **Enable it once per clone — git does not let a repo switch on its own hooks:** `git config core.hooksPath .githooks`. Without that line the gate does not run on your machine; CI still runs the suite.
+
 CoalGob has no build step, no `plugin/` distribution, and no `verify.mjs` gate yet — each is owed at the unit that builds the surface it would check.
 
 ### Development Rules
@@ -52,13 +54,15 @@ Node.js 22 or newer on Linux, Windows, and macOS — CI runs the suite on all th
 | `scripts/lib/parser.test.mjs` | The test suite |
 | `scripts/test.mjs` | The zero-dependency test runner (explicit file list) |
 | `.claude-plugin/plugin.json` | The plugin manifest — the canonical version lives here |
-| `.github/` | CI, CodeQL, Scorecard, coverage, Dependabot, issue templates |
+| `.githooks/` | The local commit and push gate: the secret scan, then the suite |
+| `scripts/secret-gate.mjs` | The secret scan the hooks run (`scripts/lib/secret-scan.mjs` is the scanner) |
+| `.github/` | CI, CodeQL, Scorecard, coverage, the release workflow, Dependabot, issue templates |
 
 ---
 
 ## 🚀 Releasing (Maintainers)
 
-Bump version in `.claude-plugin/plugin.json` → add a CHANGELOG entry → ensure `test.mjs` passes → commit → create a signed git tag (`vX.Y.Z`) → push `--follow-tags` → create a GitHub Release (stable tags only).
+Bump version in `.claude-plugin/plugin.json` → add a CHANGELOG entry → ensure `test.mjs` passes → commit → create a signed git tag (`vX.Y.Z`) → push `--follow-tags`. The tag-push workflow (`.github/workflows/create-release.yml`) is the sole creator of Releases and derives the title and body from the CHANGELOG entry, which opens with a one-line summary under its heading; a pre-release tag gets no Release of its own.
 
 ---
 

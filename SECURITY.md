@@ -16,6 +16,10 @@ git config gpg.ssh.allowedSignersFile ./coalgob_signers
 git tag -v "$(git describe --tags --abbrev=0)"
 ```
 
+## Secret Scan
+
+The repository carries a local secret scan, `scripts/secret-gate.mjs`, that the `pre-commit` and `pre-push` hooks in `.githooks/` run on the contributor's own machine (enabled once per clone with `git config core.hooksPath .githooks`). Pre-commit scans the staged tree. Pre-push also scans every commit message, tag message and added line in the range being pushed, so a key added and then deleted inside that range is still found. It looks for secret-shaped text (provider tokens, private keys, connection strings, HTTP authentication headers), prints only a location, a pattern name and a short one-way fingerprint, never the value, and refuses the commit or push on a hit or on a scan it could not run. It is a line scanner with stated limits (a key split across lines, a credential inside a URL, or a value of one case or hex only can pass), it does not run in CI, and it does not replace GitHub's own secret scanning on the public repository.
+
 ## Source Integrity
 
 CoalGob has no generated `plugin/` distribution and no `verify.mjs` gate yet — the shipped surface is source you can read: `scripts/lib/parser.mjs`, `scripts/lib/tokenizer.mjs`, and their tests. `node scripts/test.mjs` runs the zero-dependency suite with an explicit file list (a missing listed file fails loud). Zero dependencies — no lockfile, nothing to `npm audit`.

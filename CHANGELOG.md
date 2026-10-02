@@ -2,11 +2,9 @@
 
 All notable changes to CoalGob are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
-## [Unreleased]
-
 ## [0.1.0-beta.2] - 2026-10-02
 
-The commit and push gate now scans for secrets, releases are posted by one workflow, and two silent misses in the command classifier are closed.
+The commit and push gate now scans for secrets, releases are posted by one workflow, and two silent misses in the command classifier are fixed in the forms the suite pins.
 
 **Pre-release.** The shipped surface is unchanged in kind: the command-classifier engine (parser and tokenizer) and its test suite, with no hook, skill, command, or interception surface yet. The canonical version is `.claude-plugin/plugin.json`. A beta tag gets no Release of its own; the repository's one pre-release Release is the launch-form Release of `0.1.0-beta.1`.
 
@@ -24,7 +22,7 @@ The commit and push gate now scans for secrets, releases are posted by one workf
 
 ### Fixed
 
-- Two silent misses in the command classifier, found by reading a peer guard's fixes class by class: a command word preceded by an append-style or subscripted assignment now classifies, and a PowerShell `foreach` statement no longer hides a destruction verb in its body (it is now reported `OUT_OF_SCOPE`, never silent). Pins are added for classes that already held. `df6a581`
+- Two silent misses in the command classifier, found by reading a peer guard's fixes class by class: a command word preceded by an append-style or subscripted assignment now classifies, and a PowerShell `foreach` statement's body is now reached in the forms the suite pins (reported `OUT_OF_SCOPE`). Pins are added for classes that already held. `df6a581`
 
 ## [0.1.0-beta.1] - 2026-09-21
 
@@ -144,8 +142,7 @@ SAME commit that changes the coverage, never after.
 
 **Deliberately absent, each owed at a stated trigger (as of 0.1.0-beta.2):**
 
-- `hooks/`, `skills/`, `agents/`, `commands/`, interception code, `scripts/build-plugin.mjs`,
-  `scripts/verify.mjs` — no hook, skill, or plugin surface exists yet; owed once the interception
+- `hooks/`, `skills/`, `agents/`, `commands/`, interception code, `scripts/build-plugin.mjs` — no hook, skill, or plugin surface exists yet; owed once the interception
   mechanism (emitter + hook wiring) is built. (`scripts/lib/parser.mjs` + `scripts/test.mjs` are no
   longer on this list — they exist as of this entry.)
 - `plugin/` dist, `.claude-plugin/marketplace.json` — no source to build, and a manifest whose only

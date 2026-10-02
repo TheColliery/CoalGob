@@ -87,10 +87,9 @@ map for whoever wants to get past it.
   at one place and not at its sibling. **17 of the 18 are closed; 1 remains open.** The audit is a
   lower bound: a second pass from a different starting angle could find more.
 - **Blind attack rounds** — fresh attackers given only the parser and its published scope — have
-  found further root causes. **At least 13 are known and open** (7 from one round, at least 2 from a
-  later one, and 4 from a class-by-class read of a peer guard's fixes; one of the 7 is the open site
-  above). Of the 4, one is the leftover of a class closed in that same read and three sit in families
-  this guard declares out of scope.
+  found further root causes. **At least 11 are known and open** (7 from one round, at least 2 from a
+  later one, and 2 from a class-by-class read of a peer guard's fixes; one of the 7 is the open site
+  above).
 
 **The detail publishes when the open root causes close.** Until then, treat a `NO_MATCH` as "this
 engine's list did not match", never as "safe". This is a published ceiling on a guard that does not

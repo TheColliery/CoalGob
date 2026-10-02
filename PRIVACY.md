@@ -7,6 +7,6 @@
 - **It runs where you run it** — CoalGob operates no servers and no service. The code executes on your own machine, under your own account, only when you invoke it.
 - **A verdict is not a safety claim.** `NO_MATCH` means only that the parser's closed verb list did not match the command; it never says the command is safe.
 - **Bug reports are manual.** Nothing is ever submitted automatically; you open an issue yourself and see everything you send.
-- **Local files only** — this tool reads and writes nothing. `parseCommand` opens no files; the test runner (`scripts/test.mjs`) reads its own test file under `scripts/lib/` and writes nothing.
+- **Local files only** — this tool reads and writes nothing. `parseCommand` opens no files; the test runner (`scripts/test.mjs`) reads its own test files and writes only temporary fixtures under the system temp directory, which the tests remove.
 
 Questions: open an issue at <https://github.com/TheColliery/CoalGob/issues>.

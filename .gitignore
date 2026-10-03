@@ -6,3 +6,7 @@ AGENTS.md
 .agents/
 COALGOB_BLUEPRINT.md
 COALGOB_BLUEPRINT.pre-edit.md
+
+# Scratch/working files from agent sessions (drafts, throwaway probes): internal, never published.
+# Untracked-but-not-ignored, they are one broad `git add` from this repository's remote.
+scratchpad/

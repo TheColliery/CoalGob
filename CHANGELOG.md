@@ -2,6 +2,13 @@
 
 All notable changes to CoalGob are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [Unreleased]
+
+### Changed
+
+- Release tooling and a test follow the `.github` canon at `b4cf4ab` (the release scripts and their tests, the release workflow, and the secret-gate test). No shipped behaviour change.
+- `scripts/release-notes.test.mjs` is held at blob `d7e299c4`, the canon's previous version of that test, not its newest (`a8f3ba69`), a named divergence: the newest asserts the child environment holds only what node needs, which fails where macOS adds `__CF_USER_TEXT_ENCODING` and where the Coverage leg sets `NODE_V8_COVERAGE`. It re-syncs to the canon's blob when the canon's fix lands.
+
 ## [0.1.0-beta.2] - 2026-10-02
 
 The commit and push gate now scans for secrets, releases are posted by one workflow, and two silent misses in the command classifier are fixed in the forms the suite pins.
@@ -154,10 +161,6 @@ SAME commit that changes the coverage, never after.
   when that file exists, a named divergence from the canon hook, which runs it unconditionally. Owed back to the
   canon line at the unit that adds `scripts/verify.mjs`; the sync gate needs a gate script to run and a stable
   §1 to check against, and neither exists yet. The CI workflow's verify step skips cleanly until then.
-- `scripts/release-notes.test.mjs` at the canon's current blob (`a8f3ba69`) — a named divergence: this room holds the
-  canon's last blob before it (`d7e299c4`, `.github` `2bb0460`), because the current one asserts the child environment
-  holds only what node needs, which fails where macOS or the coverage leg adds variables (it shipped red in CoalBoard's
-  CI). Owed back to the canon line once the canon replaces that test.
 
 No longer absent: `.github/` and `SECURITY.md` / `PRIVACY.md` / `CONTRIBUTING.md` were both owed at first
 push; that trigger fired with 0.1.0-beta.1 and they are listed under its Added above. `.githooks/` was owed

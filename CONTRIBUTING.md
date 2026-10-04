@@ -62,7 +62,7 @@ Node.js 22 or newer on Linux, Windows, and macOS — CI runs the suite on all th
 
 ## 🚀 Releasing (Maintainers)
 
-Bump version in `.claude-plugin/plugin.json` → add a CHANGELOG entry → ensure `test.mjs` passes → commit → create a signed git tag (`vX.Y.Z`) → push `--follow-tags`. The tag-push workflow (`.github/workflows/create-release.yml`) is the sole creator of Releases and derives the title and body from the CHANGELOG entry, which opens with a one-line summary under its heading; a pre-release tag gets no Release of its own.
+Bump version in `.claude-plugin/plugin.json` → add a CHANGELOG entry → ensure `test.mjs` passes → commit → create a signed git tag (`vX.Y.Z`) → push `--follow-tags`. The tag-push workflow (`.github/workflows/create-release.yml`) is the sole creator of Releases and derives the title and body from the CHANGELOG entry, which opens with a one-line summary under its heading. The summary is a band, not a hard cap: 45 to 75 characters passes clean (aim 60) and outside it the scripts warn and still pass (`SUMMARY_BAND`, `SUMMARY_AIM` in `scripts/lib/release-shape.mjs`); the whole announcement title, the repository name plus the Release title, over 200 characters (`MIRROR_TITLE_CAP`) fails `node scripts/release-notes.mjs --check --repo CoalGob`, which you run before the tag. A pre-release tag gets no Release of its own.
 
 ---
 

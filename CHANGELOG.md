@@ -154,6 +154,10 @@ SAME commit that changes the coverage, never after.
   when that file exists, a named divergence from the canon hook, which runs it unconditionally. Owed back to the
   canon line at the unit that adds `scripts/verify.mjs`; the sync gate needs a gate script to run and a stable
   §1 to check against, and neither exists yet. The CI workflow's verify step skips cleanly until then.
+- `scripts/release-notes.test.mjs` at the canon's current blob (`a8f3ba69`) — a named divergence: this room holds the
+  canon's last blob before it (`d7e299c4`, `.github` `2bb0460`), because the current one asserts the child environment
+  holds only what node needs, which fails where macOS or the coverage leg adds variables (it shipped red in CoalBoard's
+  CI). Owed back to the canon line once the canon replaces that test.
 
 No longer absent: `.github/` and `SECURITY.md` / `PRIVACY.md` / `CONTRIBUTING.md` were both owed at first
 push; that trigger fired with 0.1.0-beta.1 and they are listed under its Added above. `.githooks/` was owed

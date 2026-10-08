@@ -99,7 +99,7 @@ test('test-spawn: node --test with the plan argv and env hands the cap to the FI
   for (const mb of [Number(m[1]), Number(m[2])]) assert.ok(mb >= 2048 && mb < 2048 + 512, `limit ${mb} MB in ${m[0]}`);
 });
 
-test('test-spawn: --test-force-exit ends a run whose test left a handle open after finishing, and the whole-run deadline kills a hung child', (t) => {
+test('test-spawn: --test-force-exit ends a run whose test left a handle open after finishing, and a spawn timeout kills a hung run', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'coalgob-testspawn-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const fixture = path.join(dir, 'handle.test.mjs');

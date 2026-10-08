@@ -11,8 +11,9 @@
 // 1. The reason for the ENV form. The exemplar says a heap flag on the argv "would cap the runner and none
 //    of the files it runs"; the ninth amendment's 2026-10-08 correction measured that false on Node 24.19:
 //    the runner passes its own flag to the file processes. The ENV form is still the rule because it also
-//    caps the processes a TEST ITSELF spawns (measured there: 2240 MB in the env against 4288 MB on the
-//    argv), and NODE_OPTIONS reaches every descendant.
+//    caps the processes a TEST ITSELF spawns when they inherit its env (measured there: 2240 MB in the env
+//    against 4288 MB on the argv). NODE_OPTIONS reaches every descendant that inherits its env; a test that
+//    spawns with an explicit env carries the cap only if that env names NODE_OPTIONS.
 // 2. `--test-force-exit` and a whole-run deadline (RUN_DEADLINE_MS, applied by scripts/test.mjs as the
 //    spawn's `timeout` with SIGKILL). A test that hangs past --test-timeout is reported failed, but the run
 //    never ends without them (CoalMine 6165316); the exemplar has neither.

@@ -1,5 +1,6 @@
 // The test runner's child spawn plan (CWK-199's class): `node --test` spawns one child per test file, so the heap cap
-// rides NODE_OPTIONS in the ENV (every descendant inherits it, the processes a test itself spawns included) and the
+// rides NODE_OPTIONS in the ENV (every descendant that inherits the env gets it, a process a test spawns with the
+// inherited env included; a spawn with an explicit env carries it only if that env names NODE_OPTIONS) and the
 // files run one at a time (--test-concurrency=1) under a finite per-test clock, with --test-force-exit so a run whose
 // test hung past that clock still ends. Zone rule: dispatch-transport.md, ninth amendment (corrected 2026-10-08).
 import test from 'node:test';

@@ -51,8 +51,8 @@ Node.js 22 or newer on Linux, Windows, and macOS — CI runs the suite on all th
 |---|---|
 | `scripts/lib/parser.mjs` | The classifier: verb resolution and the three-valued verdict |
 | `scripts/lib/tokenizer.mjs` | The Bash tokenizer: quoting, separators, redirects |
-| `scripts/lib/parser.test.mjs` | The test suite |
-| `scripts/test.mjs` | The zero-dependency test runner (explicit file list) |
+| `scripts/lib/parser.test.mjs` | The classifier's tests; the other test files sit beside the code they test, and `scripts/test.mjs` lists them all |
+| `scripts/test.mjs` | The zero-dependency test runner (explicit file list); it runs the files one at a time with a heap cap and a finite clock (`scripts/lib/test-spawn.mjs`) |
 | `.claude-plugin/plugin.json` | The plugin manifest — the canonical version lives here |
 | `.githooks/` | The local commit and push gate: the secret scan, then the suite |
 | `scripts/secret-gate.mjs` | The secret scan the hooks run (`scripts/lib/secret-scan.mjs` is the scanner) |

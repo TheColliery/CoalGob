@@ -8,6 +8,7 @@ All notable changes to CoalGob are documented here. Format follows [Keep a Chang
 
 - Release tooling and a test follow the `.github` canon at `b4cf4ab` (the release scripts and their tests, the release workflow, and the secret-gate test). No shipped behaviour change.
 - `scripts/release-notes.test.mjs` is held at blob `d7e299c4`, the canon's previous version of that test, not its newest (`a8f3ba69`), a named divergence: the newest asserts the child environment holds only what node needs, which fails where macOS adds `__CF_USER_TEXT_ENCODING` and where the Coverage leg sets `NODE_V8_COVERAGE`. It re-syncs to the canon's blob when the canon's fix lands.
+- Test tooling, no shipped behaviour change: `scripts/test.mjs` now runs `node --test` with the heap cap `--max-old-space-size=2048` in the child's `NODE_OPTIONS`, `--test-concurrency=1`, `--test-timeout=60000`, `--test-force-exit`, and a whole-run deadline of 600000 ms (10 minutes) that kills the run; the plan is `scripts/lib/test-spawn.mjs`.
 
 ## [0.1.0-beta.2] - 2026-10-02
 

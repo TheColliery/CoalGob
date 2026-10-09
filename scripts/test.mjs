@@ -32,8 +32,11 @@ const TEST_FILES = [
 
 // NAMED DIVERGENCE from the canon wiring (09a, a finding for the .github deputy): the canon wave-run.test.mjs cannot pass INSIDE wave-run. Every child wave-run starts carries
 // `--import stdout-sync.mjs` on NODE_OPTIONS, and Node runs NODE_OPTIONS imports before the command line's, so the test "the stdout preload switches BOTH pipes" (a recorder loaded first
-// must see the two setBlocking calls) finds them already made and fails with an empty list. So that one file runs in a second phase, by plain `node --test` under the same heap
-// cap and clocks with no preload, and its TAP is judged by wave-run's own classifyFile (a VACUOUS file is red there too). Drop the second phase when the canon test strips the preload.
+// must see the two setBlocking calls) finds them already made and fails with an empty list. So that one file runs in a second phase, by `node --import <stdout-sync.mjs> --test` under the
+// same heap cap and clocks, and its TAP is judged by wave-run's own classifyFile (a VACUOUS file is red there too). The file process is protected the same way as in wave-run: the
+// preload (blocking pipes, so a force-exited file loses no TAP tail on a POSIX pipe) goes on the COMMAND LINE, which the test runner forwards to the file process, and NOT on
+// NODE_OPTIONS, because a NODE_OPTIONS import runs before the test's own recorder and is exactly what turns test :401 red (measured by the INSPECT reviewer, 34 of 34 this way).
+// Drop the second phase when the canon test strips the preload from the environment it hands its recorder.
 const SEPARATE = ['lib/wave-run.test.mjs'];
 
 const HEAP_MB = 2048;
@@ -59,27 +62,31 @@ const listed = new Set(resolved.map((f) => path.resolve(f)));
     }
   }
 })(here);
-if (process.exitCode === 1) process.exit(1);
+// A bad roster stops here: the exit code is set, the messages above are flushed by the process ending on its own (node/runtime.md 7: never process.exit()).
+if (process.exitCode !== 1) await run();
 
-const args = [
-  path.join(here, 'lib', 'wave-run.mjs'),
-  '--heap-mb', String(HEAP_MB), '--file-timeout-ms', String(TEST_TIMEOUT_MS), '--file-clock-ms', String(FILE_CLOCK_MS), '--deadline-ms', String(DEADLINE_MS),
-  '--', ...TEST_FILES.map((f) => path.posix.join('scripts', f)),
-];
-// The outer clock is the runner's deadline plus the time it needs to kill a tree and print; wave-run ends itself before this.
-const r = spawnSync(process.execPath, args, { cwd: repo, stdio: 'inherit', timeout: DEADLINE_MS + 120000, killSignal: 'SIGKILL' });
-if (r.error) console.error(`[test] the run did not finish: ${r.error.message}`);
-let code = r.status ?? 1;
+async function run() {
+  const args = [
+    path.join(here, 'lib', 'wave-run.mjs'),
+    '--heap-mb', String(HEAP_MB), '--file-timeout-ms', String(TEST_TIMEOUT_MS), '--file-clock-ms', String(FILE_CLOCK_MS), '--deadline-ms', String(DEADLINE_MS),
+    '--', ...TEST_FILES.map((f) => path.posix.join('scripts', f)),
+  ];
+  // The outer clock is the runner's deadline plus the time it needs to kill a tree and print; wave-run ends itself before this.
+  const r = spawnSync(process.execPath, args, { cwd: repo, stdio: 'inherit', timeout: DEADLINE_MS + 120000, killSignal: 'SIGKILL' });
+  if (r.error) console.error(`[test] the run did not finish: ${r.error.message}`);
+  let code = r.status ?? 1;
 
-// Phase two: the files wave-run cannot run (SEPARATE), one at a time, judged by the same TAP reader.
-const wave = await import(pathToFileURL(path.join(here, 'lib', 'wave-run.mjs')).href);
-for (const f of SEPARATE) {
-  const rel = path.posix.join('scripts', f);
-  const env = { ...process.env, NODE_OPTIONS: wave.nodeOptionsWithHeap(process.env.NODE_OPTIONS, HEAP_MB) };
-  delete env.NODE_TEST_CONTEXT;
-  const c = spawnSync(process.execPath, ['--test', '--test-reporter=tap', `--test-timeout=${TEST_TIMEOUT_MS}`, '--test-force-exit', rel], { cwd: repo, env, encoding: 'utf8', maxBuffer: 1 << 28, timeout: FILE_CLOCK_MS, killSignal: 'SIGKILL', windowsHide: true });
-  const res = wave.classifyFile({ file: rel, code: c.status, signal: c.signal, stdout: c.stdout || '', killedBy: c.error ? `could not finish: ${c.error.message}` : null });
-  console.log(`${res.status} ${rel}${res.reason ? ': ' + res.reason : ''} (second phase)`);
-  if (res.status !== 'PASS') { code = 1; process.stderr.write(`${c.stdout || ''}${c.stderr || ''}\n`); }
+  // Phase two: the files wave-run cannot run (SEPARATE), one at a time, judged by the same TAP reader. The stdout preload rides the command line, never NODE_OPTIONS (see SEPARATE above).
+  const wave = await import(pathToFileURL(path.join(here, 'lib', 'wave-run.mjs')).href);
+  const syncUrl = pathToFileURL(path.join(here, 'lib', 'stdout-sync.mjs')).href;
+  for (const f of SEPARATE) {
+    const rel = path.posix.join('scripts', f);
+    const env = { ...process.env, NODE_OPTIONS: wave.nodeOptionsWithHeap(process.env.NODE_OPTIONS, HEAP_MB) };
+    delete env.NODE_TEST_CONTEXT;
+    const c = spawnSync(process.execPath, ['--import', syncUrl, '--test', '--test-reporter=tap', `--test-timeout=${TEST_TIMEOUT_MS}`, '--test-force-exit', rel], { cwd: repo, env, encoding: 'utf8', maxBuffer: 1 << 28, timeout: FILE_CLOCK_MS, killSignal: 'SIGKILL', windowsHide: true });
+    const res = wave.classifyFile({ file: rel, code: c.status, signal: c.signal, stdout: c.stdout || '', killedBy: c.error ? `could not finish: ${c.error.message}` : null });
+    console.log(`${res.status} ${rel}${res.reason ? ': ' + res.reason : ''} (second phase)`);
+    if (res.status !== 'PASS') { code = 1; process.stderr.write(`${c.stdout || ''}${c.stderr || ''}\n`); }
+  }
+  process.exitCode = code;
 }
-process.exit(code);

@@ -91,8 +91,12 @@ test('test.mjs: a *.test.mjs on disk that the roster does not list fails loud an
   assert.ok(listed.length >= 9);
   for (const f of listed) fs.writeFileSync(path.join(scripts, f), '');
   fs.writeFileSync(path.join(scripts, 'stray.test.mjs'), '');
+  // A stub runner that announces itself and exits 0: if test.mjs reaches wave-run despite the stray file, the marker is printed and the status is 0, so the exit code the roster check owns cannot come from a missing module.
+  const REACHED = 'WAVE-RUN-REACHED';
+  fs.writeFileSync(path.join(scripts, 'lib', 'wave-run.mjs'), `console.log('${REACHED}');\n`);
   const r = spawnSync(process.execPath, [path.join(scripts, 'test.mjs')], { cwd: dir, encoding: 'utf8', timeout: 60000, killSignal: 'SIGKILL' });
   assert.equal(r.status, 1);
+  assert.doesNotMatch(r.stdout, new RegExp(REACHED), 'the run stopped at the roster check and never reached wave-run');
   assert.match(r.stderr, /on disk but not listed: .*stray\.test\.mjs/);
   assert.doesNotMatch(r.stderr, /listed test file missing/);
 });

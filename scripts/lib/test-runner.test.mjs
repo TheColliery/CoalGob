@@ -85,10 +85,11 @@ test('test.mjs: a *.test.mjs on disk that the roster does not list fails loud an
   fs.mkdirSync(path.join(scripts, 'lib'), { recursive: true });
   fs.copyFileSync(TEST_MJS, path.join(scripts, 'test.mjs'));
   const listed = /const TEST_FILES = \[([^\]]*)\]/.exec(SRC)[1].match(/'([^']+)'/g).map((s) => s.slice(1, -1));
-  const separate = /const SEPARATE = \[([^\]]*)\]/.exec(SRC)[1].match(/'([^']+)'/g).map((s) => s.slice(1, -1));
-  assert.deepEqual(separate, ['lib/wave-run.test.mjs']);
-  assert.ok(listed.length >= 8);
-  for (const f of [...listed, ...separate]) fs.writeFileSync(path.join(scripts, f), '');
+  assert.ok(listed.includes('lib/wave-run.test.mjs'), 'the canon wave-run test runs in the ordinary roster, no second phase');
+  const code = SRC.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+  assert.doesNotMatch(code, /SEPARATE|second phase|process\.exit\(/, 'one phase in the code, and the runner ends with process.exitCode');
+  assert.ok(listed.length >= 9);
+  for (const f of listed) fs.writeFileSync(path.join(scripts, f), '');
   fs.writeFileSync(path.join(scripts, 'stray.test.mjs'), '');
   const r = spawnSync(process.execPath, [path.join(scripts, 'test.mjs')], { cwd: dir, encoding: 'utf8', timeout: 60000, killSignal: 'SIGKILL' });
   assert.equal(r.status, 1);

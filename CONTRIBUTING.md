@@ -33,7 +33,7 @@ CoalGob has no build step, no `plugin/` distribution, and no `verify.mjs` gate y
 * **The identity sentence says the same thing on every surface.** `README.md` carries it in full and the `description` in `.claude-plugin/plugin.json` carries a trimmed derivative of it; change what one claims, check the other still says the same.
 * **Complete the set, and cite the source.** When you add a verb, flag, or keyword to a list, cite a checkable source in a comment (a `--help` output, the shell's own documentation) and say what the source answers and where judgment still enters. Half of a set is an exposure that reads as a fix.
 * **A comment that describes coverage changes in the same commit as the coverage** — never after.
-* **Add unit tests:** every change to a module in `scripts/lib/` carries a matching test in a file that `scripts/test.mjs` lists: `scripts/lib/parser.test.mjs` for the classifier, `scripts/lib/test-spawn.test.mjs` for the test runner's plan, `scripts/lib/release-shape.test.mjs` for the release shape, and `scripts/secret-scan.test.mjs` for `scripts/lib/secret-scan.mjs`.
+* **Add unit tests:** every change to a module in `scripts/lib/` carries a matching test in a file that `scripts/test.mjs` lists: `scripts/lib/parser.test.mjs` for the classifier, `scripts/lib/test-runner.test.mjs` for the test runner, `scripts/git-spawn-census.test.mjs` for the git-spawn census, `scripts/lib/release-shape.test.mjs` for the release shape, and `scripts/secret-scan.test.mjs` for `scripts/lib/secret-scan.mjs`.
 * **`NO_MATCH` is never a safety claim** — do not write code, tests, or docs that read it as "safe".
 * **Language & tone:** shipped source files and documentation stay in English.
 
@@ -52,7 +52,7 @@ Node.js 22 or newer on Linux, Windows, and macOS — CI runs the suite on all th
 | `scripts/lib/parser.mjs` | The classifier: verb resolution and the three-valued verdict |
 | `scripts/lib/tokenizer.mjs` | The Bash tokenizer: quoting, separators, redirects |
 | `scripts/lib/parser.test.mjs` | The classifier's tests; the other test files sit in `scripts/` and `scripts/lib/`, and `scripts/test.mjs` lists them all |
-| `scripts/test.mjs` | The zero-dependency test runner (explicit file list); it runs the files one at a time with a heap cap and a finite clock (`scripts/lib/test-spawn.mjs`) |
+| `scripts/test.mjs` | The zero-dependency test runner (explicit file list); it runs the files through `scripts/lib/wave-run.mjs`, which admits files by the live machine reading, with a heap cap, a clock per test and per file, and a whole-run deadline |
 | `.claude-plugin/plugin.json` | The plugin manifest — the canonical version lives here |
 | `.githooks/` | The local commit and push gate: the secret scan, then the suite |
 | `scripts/secret-gate.mjs` | The secret scan the hooks run (`scripts/lib/secret-scan.mjs` is the scanner) |

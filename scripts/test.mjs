@@ -18,6 +18,8 @@ const TEST_FILES = [
   'release-notes.test.mjs',
   'verify-release-shape.test.mjs',
   'lib/release-shape.test.mjs',
+  'lib/git-env-census.test.mjs',
+  'git-spawn-census.test.mjs',
 ];
 
 const resolved = TEST_FILES.map((f) => path.join(here, f));

@@ -3928,3 +3928,56 @@ test('the delimiter word is not an operand of the command (Group 111, CG-9)', ()
   assert.equal(r.verdict, 'DESTRUCTION');
   assert.deepEqual(r.findings.map((f) => f.target), ['build']);
 });
+
+// --- Group 112 (16f, census row CG-10; CodeRabbit PR #2 thread T11) - a
+// drive-letter path word (`C:` then a backslash) turns bash's backslash
+// escape OFF for the rest of the word (Set Z7: cmd.exe has no backslash
+// escape). A backslash before a QUOTE inside such a word is where the two
+// readings part: bash makes the quote a literal character, the drive-path
+// reading let it open a quoted run that swallowed `&& rm -rf build`, a
+// silent NO_MATCH while real bash ran the rm. The fix is a tokenizer
+// error (OUT_OF_SCOPE, kind unjudged), the honest answer when two grammars
+// disagree and one hides a command. CITED SOURCE: bash 5.x RUN live in a
+// temp folder (scratchpad/16f/drive-probe.out): `echo C:<bs>' && rm -rf
+// build && echo <bs>'` and the double-quote twin REMOVED build; the
+// parser's before-verdicts are scratchpad/16f/cg10-before.out.
+// DELIBERATE NARROWING of the row's stated fix (quote, whitespace OR
+// separator): the same RUN showed the whitespace and separator shapes do
+// NOT hide a command from the drive-path reading (`C:<bs>;` and `C:<bs>|`
+// make bash NOT run the rm the parser flags, an over-flag; `C:<bs> &&`
+// ran it and is flagged; `C:<bs>&&` the same), so erroring on them would
+// only turn a correct DESTRUCTION for the very common trailing backslash
+// (`rmdir /s /q C:<bs>build<bs> && ...`) into an unjudged admission.
+// Axes: 1 SPELLING (both quote characters, the drive letter at word start
+// and after a flag prefix `-Path:C:<bs>'`), 5 STRUCTURAL (the sticky
+// mid-word drive detection).
+const DBS = String.fromCharCode(92);
+test('a backslash before a quote inside a drive-letter path word is a tokenizer error, never a silent NO_MATCH (Group 112, CG-10)', () => {
+  const hidden = [
+    'echo a:' + DBS + "' && rm -rf build && echo " + DBS + "'",
+    'echo C:' + DBS + "' && rm -rf build && echo " + DBS + "'",
+    'echo C:' + DBS + '" && rm -rf build && echo ' + DBS + '"',
+    'echo -Path:C:' + DBS + "' && rm -rf build",
+    'echo C:' + DBS + 'temp' + DBS + "' && rm -rf build",
+  ];
+  for (const cmd of hidden) {
+    const r = parseCommand(cmd);
+    assert.equal(r.verdict, 'OUT_OF_SCOPE', cmd);
+    assert.equal(r.findings[0].kind, 'unjudged', cmd);
+  }
+});
+
+test('bare Windows paths keep their literal backslashes: trailing, UNC, quoted and before whitespace or a separator (Group 112, CG-10)', () => {
+  const del = parseCommand('del C:' + DBS + 'temp' + DBS + 'a.txt');
+  assert.equal(del.verdict, 'DESTRUCTION');
+  assert.equal(del.findings[0].target, 'C:' + DBS + 'temp' + DBS + 'a.txt');
+  const trailing = parseCommand('rmdir /s /q C:' + DBS + 'build' + DBS + ' && echo done');
+  assert.equal(trailing.verdict, 'DESTRUCTION');
+  assert.equal(trailing.findings[0].target, 'C:' + DBS + 'build' + DBS);
+  assert.equal(parseCommand('rmdir /s /q C:' + DBS + 'build' + DBS).findings[0].target, 'C:' + DBS + 'build' + DBS);
+  assert.equal(verdictOf('echo C:' + DBS + DBS + 'server' + DBS + 'share'), 'NO_MATCH');
+  assert.equal(verdictOf('echo "C:' + DBS + 'Program Files' + DBS + 'x" && rm -rf build'), 'DESTRUCTION');
+  for (const cmd of ['echo C:' + DBS + ' && rm -rf build', 'echo C:' + DBS + '; rm -rf build', 'echo C:' + DBS + '| rm -rf build']) {
+    assert.equal(verdictOf(cmd), 'DESTRUCTION', cmd);
+  }
+});

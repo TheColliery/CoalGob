@@ -378,6 +378,20 @@ export function tokenize(input) {
       if (ch === '\\' && !isWindowsDrivePath && /^[A-Za-z]:$/.test(input.slice(i - 2, i))) {
         isWindowsDrivePath = true;
       }
+      // CG-10 (16f, Group 112): inside a drive-letter path word a backslash
+      // before a QUOTE is where bash and cmd.exe part ways - bash makes the
+      // quote a literal character, the drive-path reading would let it open
+      // a quoted run that swallows `&& rm -rf build` (RUN, bash 5.x: the rm
+      // ran, scratchpad/16f/drive-probe.out). Two grammars disagree and one
+      // hides a command: a tokenizer error (OUT_OF_SCOPE unjudged), never a
+      // silent NO_MATCH. Whitespace and separators after the backslash are
+      // deliberately NOT errors: they hide nothing from the drive-path
+      // reading (the same RUN), so a trailing `C:\dir\ && ...` stays a
+      // DESTRUCTION with its real path.
+      if (ch === '\\' && isWindowsDrivePath && (input[i + 1] === "'" || input[i + 1] === '"')) {
+        errors.push('a backslash before a quote in a Windows drive path is read differently by bash and cmd.exe');
+        i = n; brokeOnError = true; break;
+      }
       if (ch === '\\' && !isWindowsDrivePath) {
         if (input[i + 1] === '\n') { i += 2; continue; }
         if (i + 1 >= n) { errors.push('trailing backslash at end of command'); i = n; brokeOnError = true; break; }

@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseCommand } from './parser.mjs';
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 function verdictOf(cmd) {
   return parseCommand(cmd).verdict;
@@ -4164,8 +4168,9 @@ test("a backslash-newline inside the $ run is a continuation: the reviewer's wit
     BSN('echo a=$<BS><NL>$') + H3_TAIL(' && '),
     BSN('echo <BS><NL>$<BS><NL>$') + H3_TAIL(' && '),
     BSN('echo $<BS><NL><BS><NL>$') + H3_TAIL(' && '),
-    BSN('echo $<BS>') + '\r\n$' + H3_TAIL(' && '),
   ];
+  // The backslash-CR-LF row that stood here (a `$`, then backslash-CR-LF, then `$'..'`) was MSYS's reading only (GNU bash keeps the CR, so the
+  // pair is no continuation there): proven wrong as a DESTRUCTION pin by the 16f RE-INSPECT 3 (H5), moved to Group 117 where it is `unjudged`.
   for (const cmd of silent) {
     const r = parseCommand(cmd);
     assert.equal(r.verdict, 'DESTRUCTION', JSON.stringify(cmd));
@@ -4191,4 +4196,91 @@ test("the continuation rule keeps every opener bash keeps: odd run, escaped doll
   for (const cmd of closed) assert.equal(verdictOf(cmd), 'DESTRUCTION', JSON.stringify(cmd));
   // A continuation between the last `$` and the quote makes bash open ANSI-C where the parser reads a plain quote: bash hides the rm, the parser names it (an over-flag, the safe direction), never a silent miss.
   assert.notEqual(verdictOf(BSN('echo $<BS><NL>') + H3_TAIL(' && ')), 'NO_MATCH');
+});
+
+// --- Group 117 (16f bounce 4, H4 + H5, census row CG-13) - a CR inside the
+// `$` region before `$'` / `$"` is read differently by the two bash dialects
+// this guard runs under, so it is a tokenizer error (OUT_OF_SCOPE unjudged),
+// never a verdict. MSYS bash (Git Bash on Windows, RUN 5.3.15) DELETES every
+// CR before it tokenizes: `$<CR>$'..'` is `$$'..'` (the PID, then a plain
+// quote) and `<BS><CR>$'..'` is `<BS>$'..'` (an escaped dollar). GNU bash
+// keeps a CR as an ordinary character, and only backslash-NEWLINE continues a
+// line: `$<CR>$'..'` is a literal `$`, a CR and an ANSI-C opener, and
+// `<BS><CR><NL>` is an escaped CR then a real line end (bash manual 3.1.2.1;
+// RUN on GNU bash by the GNU leg below wherever CI offers one). H4 was the
+// predicate keeping the CR as a run-ending character (a silent miss on MSYS,
+// older than the bounce); H5 was bounce 3's backslash-CR-LF skip, which is
+// only MSYS's reading (a silent miss on GNU, introduced by ff25c36). The one
+// rule closes both. A CR that ends a LINE (CR directly before a newline, no
+// backslash before it) is a plain line end in both dialects and is unchanged.
+// `<CR>` below is a real carriage return, `<NL>` a real newline.
+function BSC(s) { return BSN(s).replace(/<CR>/g, '\r'); }
+const CR_TAIL = (sep) => BSC("'a<BS>'" + sep + 'rm -rf build' + sep + "echo ''<BS>'");
+test("a CR in the $ run before a quote is dialect-ambiguous: unjudged, never NO_MATCH (Group 117, H4 / H5 / CG-13)", () => {
+  const ambiguous = [
+    BSC('echo $<CR>$') + CR_TAIL(' && '), // H4, the MSYS witness
+    BSC('echo $<CR>$') + CR_TAIL('; '),
+    BSC('echo <BS><CR>$') + CR_TAIL(' && '), // MSYS: `<BS>$'..'`, an escaped dollar
+    BSC('echo $<BS><CR><NL>$$') + CR_TAIL('; '), // H5, the GNU witness (`;` so GNU reaches the rm)
+    BSC('echo $<BS><CR><NL>$$') + CR_TAIL(' && '), // H5 exactly as the reviewer wrote it
+    BSC('echo $<BS><CR><NL>$') + CR_TAIL(' && '), // the backslash-CR-LF triple that Group 116 once pinned as DESTRUCTION
+    BSC('echo $<CR>$"a"') + ' && rm -rf build',
+  ];
+  for (const cmd of ambiguous) {
+    const r = parseCommand(cmd);
+    assert.equal(r.verdict, 'OUT_OF_SCOPE', JSON.stringify(cmd));
+    assert.equal(r.findings[0].kind, 'unjudged', JSON.stringify(cmd));
+  }
+});
+
+test("a CR that ends a line stays a line end: $<CR><NL>$'..' reads as two lines in both dialects (Group 117 control)", () => {
+  // Two lines in MSYS (CR deleted) and in GNU (CR then newline): the lone `$` on line 2 opens ANSI-C in both, so the later rm is hidden
+  // in both (RUN on MSYS: the rm did not run); the parser said NO_MATCH before this bounce and still does. Pinned as it reads today.
+  assert.equal(verdictOf(BSC('echo $<CR><NL>$') + CR_TAIL(' && ')), 'NO_MATCH');
+  // The same shape with no CR is the unchanged LF controls of Groups 115 and 116.
+  assert.equal(verdictOf(BSC('echo $$') + CR_TAIL(' && ')), 'DESTRUCTION');
+});
+
+test("the heredoc delimiter reader reads a CR in its $ run the same way (Group 117, <<)", () => {
+  const forms = [
+    "rm -f a.txt; cat <<$\r$''\nx\n$\r\nrm -rf build\n",
+    'rm -f a.txt; cat <<$\r$""\nx\n$\r\nrm -rf build\n',
+    "rm -f a.txt; cat <<-$\r$''\nx\n\t$\r\nrm -rf build\n",
+    "rm -f a.txt; cat <<E$\r$'x'\ny\nE$\rx\nrm -rf build\n",
+  ];
+  for (const cmd of forms) {
+    const r = parseCommand(cmd);
+    assert.equal(r.verdict, 'OUT_OF_SCOPE', JSON.stringify(cmd));
+    assert.equal(r.findings[0].kind, 'unjudged', JSON.stringify(cmd));
+  }
+});
+
+// GNU leg: the H5 witness RUN on a GNU bash, found by CAPABILITY (a CR kept in a variable), never by process.platform. Where the capability
+// is absent (MSYS bash deletes the CR) the leg is a visible skip with the measured reason. The fixture rails of dispatch-transport.md
+// (seventh/eighth amendments): a fresh mkdtemp folder asserted to exist and to resolve under os.tmpdir() before anything runs or is removed,
+// no GIT_* in the child's environment, a killing timeout, and a registered teardown that removes only that folder.
+function bashRun(file, cwd) {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
+  return spawnSync('bash', [file], { cwd, env, encoding: 'utf8', timeout: 30000, killSignal: 'SIGKILL' });
+}
+test('GNU bash keeps the CR, so the H5 witness runs the rm and the parser must not call it NO_MATCH (Group 117, GNU leg)', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg17-gnu-'));
+  t.after(() => {
+    if (fs.realpathSync.native(dir).startsWith(fs.realpathSync.native(os.tmpdir()) + path.sep)) fs.rmSync(dir, { recursive: true, force: true });
+  });
+  assert.ok(fs.existsSync(dir) && fs.realpathSync.native(dir).startsWith(fs.realpathSync.native(os.tmpdir()) + path.sep), 'fixture folder under os.tmpdir()');
+  const probe = path.join(dir, 'probe.sh');
+  fs.writeFileSync(probe, 'v=a\rb\necho ${#v}\n');
+  const p = bashRun(probe, dir);
+  const kept = !p.error && p.status === 0 && p.stdout.trim() === '3';
+  if (!kept) {
+    t.skip('this bash does not keep a CR as a character (printed ' + JSON.stringify(p.error ? String(p.error.code) : (p.stdout || '').trim()) + ', GNU bash prints 3): MSYS/Cygwin bash deletes it');
+    return;
+  }
+  const witness = BSC('echo $<BS><CR><NL>$$') + CR_TAIL('; ');
+  fs.mkdirSync(path.join(dir, 'build'));
+  fs.writeFileSync(path.join(dir, 'witness.sh'), witness + '\n');
+  bashRun(path.join(dir, 'witness.sh'), dir);
+  assert.equal(fs.existsSync(path.join(dir, 'build')), false, 'GNU bash ran the rm');
+  assert.notEqual(verdictOf(witness), 'NO_MATCH');
 });

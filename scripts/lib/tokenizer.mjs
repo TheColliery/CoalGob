@@ -388,7 +388,10 @@ export function tokenize(input) {
       // deliberately NOT errors: they hide nothing from the drive-path
       // reading (the same RUN), so a trailing `C:\dir\ && ...` stays a
       // DESTRUCTION with its real path.
-      if (ch === '\\' && isWindowsDrivePath && (input[i + 1] === "'" || input[i + 1] === '"')) {
+      // The set is every character sequence that OPENS a quoted run right after the backslash: `'`, `"` and `$'` (16f bounce H1: the
+      // ANSI-C opener; bash reads the backslash as escaping the `$`, so its inner backslash-quote CLOSES a plain single-quoted run
+      // where this tokenizer's ANSI-C run takes it as an escape). MEASURED SAFE, left literal: `$"`, a backtick, `\\`, `$` + non-quote.
+      if (ch === '\\' && isWindowsDrivePath && (input[i + 1] === "'" || input[i + 1] === '"' || (input[i + 1] === '$' && input[i + 2] === "'"))) {
         errors.push('a backslash before a quote in a Windows drive path is read differently by bash and cmd.exe');
         i = n; brokeOnError = true; break;
       }

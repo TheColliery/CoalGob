@@ -3981,3 +3981,48 @@ test('bare Windows paths keep their literal backslashes: trailing, UNC, quoted a
     assert.equal(verdictOf(cmd), 'DESTRUCTION', cmd);
   }
 });
+
+// --- Group 113 (16f bounce H1, census row CG-10, the set completed) - the
+// reviewer's brute force found the one quote-opening member Group 112 left:
+// a backslash before `$'`. In a drive-letter word the backslash is literal,
+// so the parser read `$'` as an ANSI-C run and its inner backslash-quote as
+// an escaped quote; bash reads `\$` (a literal dollar) then a plain
+// single-quoted run that the same backslash-quote CLOSES. The two quote at
+// different places, the parser's run swallowed `&& rm -rf build`, and real
+// bash ran the rm. The error set is now the three that OPEN a quoted run
+// after a backslash: `'`, `"` and `$'`. CITED SOURCE: bash 5.x RUN live
+// (scratchpad/16f/b1-before.out): the four witnesses, the word-start and
+// flag-prefix spellings all REMOVED build while the parser said NO_MATCH;
+// the MEASURED-SAFE members stay literal: a backslash before `$"` (both
+// readings open the same double-quoted run), before a backtick (bash does
+// not run the rm there, the parser over-flags: the safe direction), two
+// backslashes, and `$` followed by a non-quote.
+test("a backslash before $' in a drive-letter path word is a tokenizer error, the four reviewer witnesses pinned (Group 113, CG-10)", () => {
+  const witnesses = [
+    'echo a:' + DBS + "$'x" + DBS + "' && rm -rf build && echo ''" + DBS + "'",
+    'echo a:' + DBS + "$'x" + DBS + "'; rm -rf build; echo ''" + DBS + "'",
+    'echo a:' + DBS + "$'x" + DBS + "' && rm -rf build && echo ' " + DBS + "'",
+    'echo a:' + DBS + "$'x" + DBS + "'; rm -rf build; echo ' " + DBS + "'",
+    'echo C:' + DBS + "$'x" + DBS + "' && rm -rf build && echo ''" + DBS + "'",
+    'echo -Path:C:' + DBS + "$'x" + DBS + "' && rm -rf build && echo ''" + DBS + "'",
+  ];
+  for (const cmd of witnesses) {
+    const r = parseCommand(cmd);
+    assert.equal(r.verdict, 'OUT_OF_SCOPE', cmd);
+    assert.equal(r.findings[0].kind, 'unjudged', cmd);
+  }
+});
+
+test('the measured-safe backslash members stay literal in a drive-letter word (Group 113, CG-10)', () => {
+  const BT = String.fromCharCode(96);
+  for (const cmd of [
+    'echo a:' + DBS + '$"x" && rm -rf build',
+    'echo a:' + DBS + BT + 'true' + BT + ' && rm -rf build',
+    'echo a:' + DBS + DBS + 'x && rm -rf build',
+    'echo a:' + DBS + '$x && rm -rf build',
+  ]) {
+    const r = parseCommand(cmd);
+    assert.equal(r.verdict, 'DESTRUCTION', cmd);
+    assert.deepEqual(r.findings.map((f) => f.target), ['build'], cmd);
+  }
+});

@@ -30,6 +30,7 @@ const TEST_FILES = [
   'lib/release-shape.test.mjs',
   'lib/git-env-census.test.mjs',
   'git-spawn-census.test.mjs',
+  'front-door-links.test.mjs',
 ];
 
 const HEAP_MB = 2048;

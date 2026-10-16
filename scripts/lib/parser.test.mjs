@@ -3713,3 +3713,62 @@ test('a foreach statement with a parenthesised head is skipped like if/while, so
   }
   assert.equal(verdictOf('foreach ($f in $files) { Write-Host $f }'), 'NO_MATCH');
 });
+
+// --- Group 108 (16f, census row CG-6; CodeRabbit PR #2 thread T6) - `env -S`
+// / `--split-string` hands env a STRING that env splits and RUNS as the
+// command, so a destroyer inside that string was never seen: skipEnvFlags
+// skipped `-S` together with its value. The answer is the one `sh -c`
+// already gets, kind `declared` (the string is a command line this
+// stateless parser does not read) - ends the silent NO_MATCH, adds no
+// parsing of the string. COMPLETE THE SET, axes named:
+//   axis 1 SPELLING: `-S str` / `-Sstr` / clustered `-iS`, `-vS`, `-iSstr`
+//   (a short cluster is read left to right and ends at the first
+//   value-taking letter: `-uS` is `-u` with the value `S`, NOT -S) / long
+//   `--split-string str`, `--split-string=str`, and every unambiguous
+//   getopt_long prefix (`--s`, `--sp`, ... `--split`).
+//   axis 5 STRUCTURAL: env anywhere in a prefix chain (`sudo env -S`,
+//   `FOO=1 env -S`, `nice env -S`, `timeout 5 env -S`, `env -i -S`).
+// CITED SOURCE: GNU coreutils 8.32 `env --help` ("-S, --split-string=S")
+// RAN live; the spellings above RAN with `echo` as the string (the string
+// was split and executed in each, `-uS echo hi` instead unset a variable
+// named S and ran `echo hi`; `-CS` tried to chdir to `S`); the prefix
+// forms `--s=`, `--sp`, `--spl=` RAN and were accepted. The long-option
+// list used for ambiguity is that same `--help` text. `-a/--argv0` is not
+// in 8.32 and is not modelled: where a newer env has it, `-aS x` is
+// over-admitted (the safe direction).
+const ENV_SPLIT_SPELLINGS = [
+  "env -S 'rm -rf build'",
+  "env -S'rm -rf build'",
+  "env -iS 'rm -rf build'",
+  "env -vS 'rm -rf build'",
+  "env -iS'rm -rf build'",
+  "env --split-string 'rm -rf build'",
+  "env --split-string='rm -rf build'",
+  "env --split 'rm -rf build'",
+  "env --spl='rm -rf build'",
+  "env --s='rm -rf build'",
+  "env -i -S 'rm -rf build'",
+  "env -u BAR -S 'rm -rf build'",
+  "sudo env -S 'rm -rf build'",
+  "FOO=1 env -S 'rm -rf build'",
+  "nice env -S 'rm -rf build'",
+  "timeout 5 env -S 'rm -rf build'",
+  "env -C /tmp -S 'rm -rf build'",
+];
+
+test('env -S / --split-string in every spelling is OUT_OF_SCOPE declared, never a silent NO_MATCH (Group 108, CG-6)', () => {
+  for (const cmd of ENV_SPLIT_SPELLINGS) {
+    const r = parseCommand(cmd);
+    assert.equal(r.verdict, 'OUT_OF_SCOPE', cmd);
+    assert.equal(r.findings[0].kind, 'declared', cmd);
+  }
+});
+
+test('env flags that only LOOK like -S stay NO_MATCH: -uS and -CS take S as a value, and a destroyer after the string still wins (Group 108, CG-6)', () => {
+  for (const cmd of ['env -uS echo hi', 'env -CS echo hi', 'env -u S echo hi', 'env --unset=S echo hi', 'env -i echo hi', 'env echo hi']) {
+    assert.equal(verdictOf(cmd), 'NO_MATCH', cmd);
+  }
+  // A real destroyer in COMMAND position keeps its DESTRUCTION verdict: the new admission only replaces a NO_MATCH.
+  assert.equal(verdictOf("env -S 'echo' rm -rf y"), 'DESTRUCTION');
+  assert.equal(verdictOf('env rm -rf y'), 'DESTRUCTION');
+});

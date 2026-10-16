@@ -294,6 +294,57 @@ function skipEnvFlags(words, startIdx) {
   return i;
 }
 
+// Census row CG-6 (16f, Group 108): `env -S`/`--split-string` hands env a
+// STRING that env splits and RUNS as the command, so the string is a
+// command line this stateless parser does not read - the same class as
+// `sh -c`, answered the same way (OUT_OF_SCOPE, kind `declared`) instead
+// of the silent NO_MATCH skipEnvFlags gave it by skipping the flag with
+// its value. CITED SOURCE, `env --help` of GNU coreutils 8.32, RUN live,
+// and every spelling below RUN with `echo` as the string:
+//   short: `-S str`, `-Sstr`, and any cluster read left to right that
+//   reaches `S` before a value-taking letter (`-iS`, `-vS`, `-iSstr`);
+//   `-uS` / `-CS` are `-u` / `-C` with the VALUE `S`, not -S.
+//   long: `--split-string str`, `--split-string=str` and every
+//   unambiguous getopt_long prefix (`--s` ... `--split`), judged against
+//   this full long-option list from the same `--help`. `-a/--argv0` is
+//   not in 8.32 and is not modelled: on a newer env `-aS x` is
+//   over-admitted, the safe direction. Scans only env's own flag region
+//   (it ends at `--` or the first non-flag word, as env's getopt does).
+const ENV_ALL_LONG_OPTIONS = [
+  '--ignore-environment', '--null', '--unset', '--chdir', '--split-string', '--block-signal',
+  '--default-signal', '--ignore-signal', '--list-signal-handling', '--debug', '--help', '--version',
+];
+
+// One env flag word -> { split, takesNext }: does it spell -S, and does it
+// leave its value to the NEXT word (so that word is not env's COMMAND).
+function classifyEnvFlag(w) {
+  if (w.startsWith('--')) {
+    const name = w.split('=')[0];
+    if (isLongOptionMatch(name, '--split-string', ENV_ALL_LONG_OPTIONS)) return { split: true, takesNext: false };
+    const takesNext = !w.includes('=')
+      && (isLongOptionMatch(name, '--unset', ENV_ALL_LONG_OPTIONS) || isLongOptionMatch(name, '--chdir', ENV_ALL_LONG_OPTIONS));
+    return { split: false, takesNext };
+  }
+  for (let k = 1; k < w.length; k++) {
+    const ch = w[k];
+    if (ch === 'S') return { split: true, takesNext: false };
+    if (ch === 'u' || ch === 'C') return { split: false, takesNext: k === w.length - 1 };
+  }
+  return { split: false, takesNext: false };
+}
+
+function envFlagsHaveSplitString(words, startIdx) {
+  let i = startIdx;
+  while (i < words.length) {
+    const w = words[i].value;
+    if (w === '--' || !isFlagShaped(w)) return false;
+    const { split, takesNext } = classifyEnvFlag(w);
+    if (split) return true;
+    i += takesNext ? 2 : 1;
+  }
+  return false;
+}
+
 // stdbuf's own value-taking flags, CITED SOURCE `stdbuf --help`, RUN live
 // this round: "-i, --input=MODE" / "-o, --output=MODE" / "-e, --error=
 // MODE" - all three mandatory-argument, all three real flags stdbuf has.
@@ -520,6 +571,7 @@ function resolveVerb(words) {
   while (idx < words.length && ASSIGNMENT_RE.test(words[idx].value)) idx++;
   let consumedPrefix = idx > 0;
   let lastPrefixVerb = null;
+  let envSplitString = false;
   while (idx < words.length) {
     // Normalized the SAME way `verbAt` already normalizes every
     // CANDIDATE verb (basenameOf + stripExeExtension) - a path-
@@ -552,6 +604,7 @@ function resolveVerb(words) {
       // a prefix's own flag (`env -i ...`, `sudo -u root ...`) sitting
       // between it and a FURTHER chained prefix verb broke the chain
       // before this loop ever got a chance to see the next prefix.
+      if (wLower === 'env' && envFlagsHaveSplitString(words, idx)) envSplitString = true;
       const skipper = PREFIX_FLAG_SKIPPERS[wLower];
       if (skipper) idx = skipper(words, idx);
       continue;
@@ -615,8 +668,9 @@ function resolveVerb(words) {
     }
     break;
   }
-  if (idx >= words.length) return null;
-  return { index: idx, consumedPrefix, lastPrefixVerb };
+  // `exhausted`: the prefix chain consumed every word (`exec` with nothing after it).
+  if (idx >= words.length) return { index: words.length, consumedPrefix, lastPrefixVerb, envSplitString, exhausted: true };
+  return { index: idx, consumedPrefix, lastPrefixVerb, envSplitString, exhausted: false };
 }
 
 // GNU getopt_long resolves any UNAMBIGUOUS PREFIX of a long option as
@@ -1686,7 +1740,18 @@ function resolveSegmentVerb(words, heredoc, fdOutOfScope, precededByPipe) {
   }
 
   const resolved = resolveVerb(words);
-  if (!resolved) {
+  const result = classifyResolved(words, resolved, heredoc, fdOutOfScope, precededByPipe);
+  // CG-6: an `env -S` string is a command line never read here, so a NO_MATCH
+  // is admitted as declared; a verdict already reached (a DESTRUCTION in
+  // COMMAND position, an OUT_OF_SCOPE) is never replaced - strictly additive.
+  if (resolved.envSplitString && result.verdict === 'NO_MATCH') {
+    return { verdict: 'OUT_OF_SCOPE', reason: 'env -S/--split-string runs a command string not inspected', kind: KIND_DECLARED };
+  }
+  return result;
+}
+
+function classifyResolved(words, resolved, heredoc, fdOutOfScope, precededByPipe) {
+  if (resolved.exhausted) {
     // The prefix chain consumed every word (`exec` with nothing after
     // it) - a PENDING unjudged admission (heredoc/fd-redirect) must
     // still surface here, the same way it does everywhere else in this

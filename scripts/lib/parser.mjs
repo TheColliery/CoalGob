@@ -768,6 +768,64 @@ function isMvBackupFlag(v) {
   return isLongOptionMatch(splitLongOption(v).name, '--backup', MV_LONG_OPTIONS);
 }
 
+// Census row CG-7 (16f, Group 109): `--backup[=CONTROL]` backs the
+// destination up only for a CONTROL that makes a backup. GNU
+// `xget_version` resolves the value with argmatch: an exact name wins,
+// else an unambiguous PREFIX, where several names of the SAME type are not
+// ambiguous. CITED SOURCE: the backup-type table of GNU coreutils 8.32
+// (`mv --help`: "none, off  never make backups; numbered, t; existing,
+// nil; simple, never"), every value RUN live (scratchpad/16f/mv-probe.out):
+// `no` `non` `o` `of` make NO backup, `n` is ambiguous (mv refuses,
+// rc 1), `ne` is `never`, `nu` is `numbered`, case matters, an unknown
+// value is refused. Returns 'none' | 'backup' | 'invalid'.
+const MV_BACKUP_CONTROLS = [
+  ['none', 'none'], ['off', 'none'], ['simple', 'simple'], ['never', 'simple'],
+  ['existing', 'existing'], ['nil', 'existing'], ['numbered', 'numbered'], ['t', 'numbered'],
+];
+function mvControlType(value) {
+  const exact = MV_BACKUP_CONTROLS.find(([name]) => name === value);
+  if (exact) return exact[1] === 'none' ? 'none' : 'backup';
+  const types = new Set(MV_BACKUP_CONTROLS.filter(([name]) => name.startsWith(value)).map(([, type]) => type));
+  if (types.size !== 1) return 'invalid';
+  return types.has('none') ? 'none' : 'backup';
+}
+
+// The CONTROL in force: the LAST `--backup=VALUE` before `--` (GNU keeps
+// the last optarg; a bare `-b` / `--backup` sets none and never resets
+// it - RUN: `--backup=none -b` is none), else the inline
+// `VERSION_CONTROL=` assignment of the command's own prefix (passed in),
+// else UNKNOWN: the real environment is invisible to a stateless parser,
+// so the answer is "backs up" (STATED LIMIT: `VERSION_CONTROL=none`
+// exported earlier makes a bare `mv -b a b` read exempt). An empty value
+// counts as none given (RUN: `--backup=` backed up). Only a CONTROL that
+// resolves to 'none' lets the move overwrite with no backup.
+function mvBackupWillBackUp(args, inlineVersionControl) {
+  let flagSeen = false;
+  let value;
+  for (const w of args) {
+    if (w.value === '--') break;
+    if (!isMvBackupFlag(w.value)) continue;
+    flagSeen = true;
+    const { name, flagValue } = splitLongOption(w.value);
+    if (w.value.startsWith('--') && isLongOptionMatch(name, '--backup', MV_LONG_OPTIONS) && flagValue) value = flagValue;
+  }
+  if (!flagSeen) return false;
+  const control = value || inlineVersionControl;
+  if (!control) return true;
+  return mvControlType(control) !== 'none';
+}
+
+// The last `VERSION_CONTROL=value` among the words BEFORE the verb (its
+// own prefix: leading assignments, or the ones an `env` carries).
+function inlineVersionControlOf(words, verbIdx) {
+  let value;
+  for (let i = 0; i < verbIdx; i++) {
+    const m = /^VERSION_CONTROL=(.*)$/s.exec(words[i].value);
+    if (m) value = m[1];
+  }
+  return value;
+}
+
 // mv's DESTINATION-selection option, CITED SOURCE `mv --help` RUN live:
 // "-t, --target-directory=DIRECTORY move all SOURCE arguments into
 // DIRECTORY" - short form, `=`-joined long form, and space-separated
@@ -829,7 +887,7 @@ function mvSuffixSkipIdx(args) {
 // mv's own decision and the other half back, for no cohesion gain.
 // Extraction, if ever warranted, rides the same future unit as the file-
 // header's own deferred split - not done piecemeal here.
-function analyzeMv(args) {
+function analyzeMv(args, inlineVersionControl) {
   // A bare invocation (no operands at all) touches nothing - the same
   // "no positional argument" exemption class analyzeDestructionVerb
   // already grants rm/truncate/del, applied here for mv's own missing-
@@ -842,7 +900,7 @@ function analyzeMv(args) {
   if (args.length === 0 || args.some((w) => isNoOpFlag('mv', w.value))) {
     return { verdict: 'NO_MATCH' };
   }
-  if (args.some((w) => isMvBackupFlag(w.value))) {
+  if (mvBackupWillBackUp(args, inlineVersionControl)) {
     return { verdict: 'NO_MATCH' };
   }
   if (lastMvOverride(args) === 'n') {
@@ -1413,7 +1471,7 @@ function unjudgedConstruct(heredoc, fdOutOfScope) {
 // function-length signal, grown by F/L/S2's OUT_OF_SCOPE-admission
 // additions. Same deferral as the file-header declaration - a lookup-
 // table extraction is future work, not this round's.
-function classifyVerb(verb, verbLower, args, heredoc, fdOutOfScope, precededByPipe) {
+function classifyVerb(verb, verbLower, args, heredoc, fdOutOfScope, precededByPipe, inlineVersionControl) {
   if (DESTRUCTION_VERBS.has(verbLower)) {
     const result = analyzeDestructionVerb(verbLower, args, precededByPipe);
     // A NO_MATCH exemption (--help, an explicit grow) must not silently
@@ -1424,7 +1482,7 @@ function classifyVerb(verb, verbLower, args, heredoc, fdOutOfScope, precededByPi
   }
 
   if (verbLower === 'mv') {
-    const result = analyzeMv(args);
+    const result = analyzeMv(args, inlineVersionControl);
     if (result.verdict !== 'NO_MATCH') return result;
     return unjudgedConstruct(heredoc, fdOutOfScope) || result;
   }
@@ -1790,7 +1848,7 @@ function classifyResolved(words, resolved, heredoc, fdOutOfScope, precededByPipe
   const [primaryIdx, ...secondaryIdx] = candidates;
   const { base: primaryVerb, baseLower: primaryVerbLower } = verbAt(words, primaryIdx);
   const primaryArgs = words.slice(primaryIdx + 1);
-  const primaryResult = classifyVerb(primaryVerb, primaryVerbLower, primaryArgs, heredoc, fdOutOfScope, precededByPipe);
+  const primaryResult = classifyVerb(primaryVerb, primaryVerbLower, primaryArgs, heredoc, fdOutOfScope, precededByPipe, inlineVersionControlOf(words, primaryIdx));
   if (primaryResult.verdict !== 'NO_MATCH') return primaryResult;
 
   // The walk keeps looking rather than returning: a mis-identified

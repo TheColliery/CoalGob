@@ -3772,3 +3772,60 @@ test('env flags that only LOOK like -S stay NO_MATCH: -uS and -CS take S as a va
   assert.equal(verdictOf("env -S 'echo' rm -rf y"), 'DESTRUCTION');
   assert.equal(verdictOf('env rm -rf y'), 'DESTRUCTION');
 });
+
+// --- Group 109 (16f, census row CG-7; CodeRabbit PR #2 thread T7) - mv's
+// backup switch exempts a move only when it really BACKS UP. isMvBackupFlag
+// read the flag's name and never its value, so `--backup=none` / `=off`
+// (which make NO backup, the destination is overwritten) was NO_MATCH.
+// The CONTROL value is resolved the way GNU argmatch does: an exact name,
+// else an unambiguous PREFIX, where two names of the SAME type are not
+// ambiguous (`no` and `non` are none; `ne` is never, a simple backup; `n`
+// is ambiguous and mv refuses, so nothing is overwritten). The effective
+// CONTROL is the LAST `--backup=VALUE` before `--`, else an inline
+// `VERSION_CONTROL=` assignment in the command's own prefix, else unknown
+// (the real environment is invisible to a stateless parser: STATED LIMIT,
+// `mv -b a b` stays exempt). A bare `-b` / `--backup` never sets a value
+// (`--backup=none -b` is still none). axes: 1 SPELLING (value prefixes,
+// long-name prefixes `--bac=`), 3 OVERRIDE ORDER (last value wins),
+// 5 STRUCTURAL (the inline assignment, also behind `env`), `--` ends flags.
+// CITED SOURCE: GNU coreutils 8.32 `mv` RUN live in a temp folder,
+// scratchpad/16f/mv-probe.out (every value above: none off no non o of
+// overwrite with no backup; n ambiguous rc 1; ne never; nu numbered;
+// NONE and bogus invalid rc 1; empty value falls back to the default
+// backup; `-b` with VERSION_CONTROL=none/off made none, =numbered made
+// numbered; an explicit value beat the variable in both directions).
+test('mv --backup=CONTROL: a CONTROL that makes no backup is a DESTRUCTION of the destination (Group 109, CG-7)', () => {
+  const noBackup = [
+    'mv --backup=none src existing', 'mv --backup=off src existing', 'mv --backup=no src existing',
+    'mv --backup=non src existing', 'mv --backup=o src existing', 'mv --backup=of src existing',
+    'mv --bac=none src existing', 'mv --backup=numbered --backup=none src existing',
+    'mv --backup=none -b src existing', 'mv -b --backup=none src existing',
+    'mv --backup=none --backup src existing',
+    'VERSION_CONTROL=none mv -b src existing', 'VERSION_CONTROL=off mv --backup src existing',
+    'env VERSION_CONTROL=none mv -b src existing', 'FOO=1 VERSION_CONTROL=no mv -b src existing',
+    'VERSION_CONTROL=numbered mv --backup=none src existing',
+    'mv -- --backup src existing',
+  ];
+  for (const cmd of noBackup) {
+    const r = parseCommand(cmd);
+    assert.equal(r.verdict, 'DESTRUCTION', cmd);
+  }
+  assert.equal(parseCommand('mv --backup=none src existing').findings[0].target, 'existing');
+});
+
+test('mv --backup=CONTROL: a CONTROL that backs up, or that mv refuses, leaves the destination recoverable and stays exempt (Group 109, CG-7)', () => {
+  const recoverable = [
+    'mv -b src existing', 'mv --backup src existing', 'mv --backup= src existing',
+    'mv --backup=numbered src existing', 'mv --backup=t src existing', 'mv --backup=nu src existing',
+    'mv --backup=nil src existing', 'mv --backup=existing src existing', 'mv --backup=simple src existing',
+    'mv --backup=never src existing', 'mv --backup=ne src existing', 'mv --backup=s src existing',
+    'mv --backup=none --backup=numbered src existing',
+    // mv refuses these (rc 1, nothing overwritten): ambiguous, wrong case, unknown.
+    'mv --backup=n src existing', 'mv --backup=NONE src existing', 'mv --backup=bogus src existing',
+    'VERSION_CONTROL=numbered mv -b src existing', 'VERSION_CONTROL=none mv --backup=numbered src existing',
+    'VERSION_CONTROL= mv -b src existing',
+  ];
+  for (const cmd of recoverable) {
+    assert.equal(verdictOf(cmd), 'NO_MATCH', cmd);
+  }
+});

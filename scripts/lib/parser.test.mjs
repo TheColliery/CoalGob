@@ -4137,3 +4137,58 @@ test("the heredoc delimiter applies the same $ run rule: <<$$'' and its siblings
   const odd = parseCommand("rm -f a.txt; cat <<$$$'x'\ny\n$$x\nrm -rf build");
   assert.deepEqual(odd.findings.map((f) => f.target), ['a.txt', 'build']);
 });
+
+// --- Group 116 (16f bounce 3, H3, census row CG-12 again) - bash removes a
+// backslash-newline (line continuation) outside single quotes BEFORE it
+// tokenizes, so `$<BS>NL$'..'` is `$$'..'` to bash: the PID parameter, then a
+// PLAIN quote. dollarOpensQuote counted the `$` run and the escape run over
+// RAW characters, saw the newline break the run, counted one `$` (odd) and
+// opened ANSI-C where bash did not: the parser's ANSI-C run swallowed
+// `&& rm -rf build`, real bash ran it (the reviewer's brute force: 44
+// silent misses, all this shape). The predicate now reads the region of
+// `$`, backslash, CR and newline characters before the quote FORWARD, the
+// way bash joins the line: a backslash-newline pair (and, on this host's
+// bash, a backslash-CR-newline triple) is skipped as a continuation, a
+// backslash before a `$` or a backslash is an escaped literal that ends the
+// run, any other newline or CR is a plain character that ends it. CITED
+// SOURCE: bash 5.x RUN live (this room's scratchpad/16f/b4-before.out and
+// b4-after.out, every row run in bash; and the reviewer's rv-re2b.mjs /
+// rv-re2c.mjs). `<NL>` below is a real newline, `<BS>` one backslash.
+function BSN(s) { return s.replace(/<BS>/g, DBS).replace(/<NL>/g, '\n'); }
+const H3_TAIL = (sep) => BSN("'a<BS>'" + sep + 'rm -rf build' + sep + "echo ''<BS>'");
+test("a backslash-newline inside the $ run is a continuation: the reviewer's witnesses and the set around them are DESTRUCTION (Group 116, H3 / CG-12)", () => {
+  const silent = [
+    BSN('echo $<BS><NL>$') + H3_TAIL(' && '),
+    BSN('echo $<BS><NL>$') + H3_TAIL('; '),
+    BSN('$<BS><NL>$') + H3_TAIL('; '),
+    BSN('echo a=$<BS><NL>$') + H3_TAIL(' && '),
+    BSN('echo <BS><NL>$<BS><NL>$') + H3_TAIL(' && '),
+    BSN('echo $<BS><NL><BS><NL>$') + H3_TAIL(' && '),
+    BSN('echo $<BS>') + '\r\n$' + H3_TAIL(' && '),
+  ];
+  for (const cmd of silent) {
+    const r = parseCommand(cmd);
+    assert.equal(r.verdict, 'DESTRUCTION', JSON.stringify(cmd));
+    assert.deepEqual(r.findings.map((f) => f.target), ['build'], JSON.stringify(cmd));
+  }
+});
+
+test("the continuation rule keeps every opener bash keeps: odd run, escaped dollar, escaped backslash then a real newline (Group 116, H3 controls)", () => {
+  // Each row below agrees with real bash (RUN, b4-before.out / b4-after.out): where the ANSI-C run opens, bash hides the rm too (NO_MATCH);
+  // where it does not, bash runs the rm and the parser names it.
+  const opens = [
+    BSN('echo $$<BS><NL>$') + H3_TAIL(' && '),
+    BSN('echo <BS>$<BS><NL>$') + H3_TAIL(' && '),
+    BSN('echo $<BS><BS><NL>$') + H3_TAIL(' && '),
+    BSN('echo <BS><BS><NL>$') + H3_TAIL(' && '),
+  ];
+  for (const cmd of opens) assert.equal(verdictOf(cmd), 'NO_MATCH', JSON.stringify(cmd));
+  const closed = [
+    BSN('echo <BS><BS><BS><NL>$$') + H3_TAIL(' && '),
+    BSN('echo $<BS><NL><BS>$') + H3_TAIL(' && '),
+    'echo $$' + H3_TAIL(' && '),
+  ];
+  for (const cmd of closed) assert.equal(verdictOf(cmd), 'DESTRUCTION', JSON.stringify(cmd));
+  // A continuation between the last `$` and the quote makes bash open ANSI-C where the parser reads a plain quote: bash hides the rm, the parser names it (an over-flag, the safe direction), never a silent miss.
+  assert.notEqual(verdictOf(BSN('echo $<BS><NL>') + H3_TAIL(' && ')), 'NO_MATCH');
+});

@@ -32,19 +32,34 @@ function isCommandPosition(tokens) {
   return prev.type === 'word' && !prev.quoted && prev.commandPos === true && BRACKET_TEST_PRECEDERS.has(prev.value);
 }
 
-// Does the `$` at `i` OPEN a `$'..'` / `$".."` run? Bash's own token rule (16f bounce 2, H2 + M4): consecutive UNESCAPED `$`
-// characters pair off as `$$` (the PID parameter), so only an ODD run's last `$` is the opener; a `$` escaped by a backslash is a
-// literal and starts no run (`\$$'..'` is a literal dollar, then an opener). Counted backwards from `i` over the run, with the run's
-// first `$` dropped when an odd number of backslashes precede it. ONE predicate for the word scanner and the heredoc delimiter reader, so
-// the two cannot drift. CITED SOURCE: bash 5.x RAN (scratchpad/16f/b3-before.out, b3-after.out and the reviewer's rv-re3/rv-re4).
+// Does the `$` at `i` OPEN a `$'..'` / `$".."` run? Bash's own token rule (16f bounce 2, H2 + M4; bounce 3, H3): consecutive UNESCAPED
+// `$` characters pair off as `$$` (the PID parameter), so only an ODD run's last `$` is the opener; a `$` escaped by a backslash is a
+// literal and starts no run (`\$$'..'` is a literal dollar, then an opener). Bash removes a backslash-newline (a line continuation)
+// BEFORE it tokenizes, so a `$`, a backslash-newline and `$'..'` read to it as `$$'..'`: the region of `$`, backslash, CR and newline characters before `i` is read
+// FORWARD, the way bash joins the line (counting raw characters backwards could not tell a continuation from a real newline). In that
+// region: a backslash-newline pair is skipped, and so is a backslash-CR-newline triple (RUN: this host's bash joins a CRLF script line
+// the same way); a backslash before a `$` or a backslash is an escaped literal that ends the run; any other newline or CR is a plain
+// character that ends it. ONE predicate for the word scanner and the heredoc delimiter reader, so the two cannot drift. CITED SOURCE:
+// bash 5.x RAN (scratchpad/16f/b3-*.out, b4-before.out, b4-after.out; the reviewer's rv-re2b brute force and rv-re3/rv-re4).
 function dollarOpensQuote(input, i) {
-  let k = i;
-  let run = 1;
-  while (k > 0 && input[k - 1] === '$') { k--; run++; }
-  let backslashes = 0;
-  while (k > 0 && input[k - 1] === '\\') { k--; backslashes++; }
-  if (backslashes % 2 === 1) run--;
-  return run % 2 === 1;
+  let start = i;
+  while (start > 0 && (input[start - 1] === '$' || input[start - 1] === '\\' || input[start - 1] === '\n' || input[start - 1] === '\r')) start--;
+  let run = 0;
+  let j = start;
+  while (j < i) {
+    const c = input[j];
+    if (c === '\\') {
+      if (input[j + 1] === '\n') { j += 2; continue; }
+      if (input[j + 1] === '\r' && input[j + 2] === '\n') { j += 3; continue; }
+      if (j + 1 === i) return false; // the backslash escapes the `$` at i itself: a literal, no opener
+      run = 0; // an escaped `$` or an escaped backslash is a literal and ends the run
+      j += 2;
+      continue;
+    }
+    run = c === '$' ? run + 1 : 0;
+    j++;
+  }
+  return run % 2 === 0;
 }
 
 // ANSI-C quoting body (`$'...'`), shared by the word scanner and the heredoc delimiter (16f bounce M1: one decoder, never two

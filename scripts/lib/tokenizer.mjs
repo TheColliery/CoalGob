@@ -86,9 +86,11 @@ export function tokenize(input) {
     if (c === ';') {
       // Inside an open arithmetic context, `;` is the C-style for-loop's
       // own clause separator (`for (( expr1 ; expr2 ; expr3 ))`, bash's
-      // compound-command grammar) - not a command separator. Every other
-      // separator (&&, ||, |, &, \n) still force-closes parenDepth
-      // unconditionally, bounding an unbalanced `((` the same way.
+      // compound-command grammar) - not a command separator. While
+      // parenDepth > 0 `||`, `&&`, `|` and `&` are inert words too (the
+      // arithmetic operators, below), so only a newline ends the context:
+      // it is the one separator that still force-closes parenDepth, which
+      // bounds an unbalanced `((` at the end of its line.
       if (parenDepth > 0) { i++; continue; }
       pushSeparator(';');
       i++; continue;

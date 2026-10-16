@@ -4074,3 +4074,66 @@ test('a backslash before an ordinary letter inside a quoted delimiter is kept, a
   assert.equal(open.verdict, 'OUT_OF_SCOPE');
   assert.equal(open.findings[0].kind, 'unjudged');
 });
+
+// --- Group 115 (16f bounce 2, H2 + M4, census rows CG-12 and CG-9) - bash's
+// own token rule for `$` before a quote: a run of UNESCAPED `$` characters
+// pairs off as `$$` (the PID parameter), so only an ODD run's last `$`
+// opens `$'..'` / `$".."`; an escaped `\$` is a literal and starts no run.
+// The word scanner and (since 4dcac39) the heredoc delimiter reader both
+// looked only at the one `$` before the quote: `$$'a\'` was read as `$` +
+// an ANSI-C opener (where `\'` is an escape and the run swallows the next
+// `&& rm -rf build`), bash reads `$$` then a PLAIN quote that `\'` does not
+// protect. H2 is the word scanner's (older than the bounce, silent), M4 the
+// delimiter reader's copy (an incomplete finding set). ONE predicate,
+// `dollarOpensQuote`, now serves both readers and both openers (`$'` and
+// `$"`). CITED SOURCE: bash 5.x RUN live, reviewer probes rv-re3.mjs /
+// rv-re4.mjs and this room's scratchpad/16f/b3-before.out / b3-after.out:
+// `$$'a\'` in a word and `<<$$''`, `<<$$""`, `<<-$$''`, `<<E$$'x'` as
+// delimiters all let the later `rm -rf build` run; `$$$'..'` (odd run) and
+// `\$'..'` (escaped) still open / not open as before; `${x}$'..'` agrees.
+function BSQ(s) { return s.replace(/<BS>/g, DBS); }
+test("an even run of $ before a quote is the PID parameter, not an ANSI-C opener: the word scanner (Group 115, H2 / CG-12)", () => {
+  const witnesses = [
+    BSQ("echo $$'a<BS>' && rm -rf build && echo ''<BS>'"),
+    BSQ("echo $$'a<BS>'; rm -rf build; echo ''<BS>'"),
+    BSQ("echo x$$'a<BS>' && rm -rf build && echo ''<BS>'"),
+    BSQ("echo $$$$'a<BS>' && rm -rf build && echo ''<BS>'"),
+  ];
+  for (const cmd of witnesses) {
+    const r = parseCommand(cmd);
+    assert.equal(r.verdict, 'DESTRUCTION', cmd);
+    assert.deepEqual(r.findings.map((f) => f.target), ['build'], cmd);
+  }
+});
+
+test("an odd run still opens ANSI-C, an escaped dollar opens nothing, ${x} before it is unchanged (Group 115, H2 controls)", () => {
+  const odd = parseCommand(BSQ("echo $$$'a<BS>'' && rm -rf build && echo ''<BS>'"));
+  assert.equal(odd.verdict, 'DESTRUCTION');
+  assert.deepEqual(odd.findings.map((f) => f.target), ['build']);
+  const escaped = parseCommand(BSQ("echo <BS>$'a<BS>' && rm -rf build && echo ''<BS>'"));
+  assert.equal(escaped.verdict, 'DESTRUCTION');
+  assert.deepEqual(escaped.findings.map((f) => f.target), ['build']);
+  // `${x}$'..'`: the `$` after the brace is an ODD run of one, ANSI-C opens, and bash agrees (RUN: the rm did NOT run).
+  assert.equal(verdictOf(BSQ("echo ${x}$'a<BS>' && rm -rf build && echo ''<BS>'")), 'NO_MATCH');
+  // An escaped dollar then a real opener: `\$$'..'` is a literal `$` then ANSI-C.
+  assert.equal(verdictOf(BSQ("echo <BS>$$'a<BS>'' && rm -rf build && echo ''<BS>'")), 'DESTRUCTION');
+  // `$"` follows the same rule: `$$"a"` is the PID then a plain double-quoted run, the command after it is seen.
+  assert.deepEqual(parseCommand('echo $$"a" && rm -rf build').findings.map((f) => f.target), ['build']);
+});
+
+test("the heredoc delimiter applies the same $ run rule: <<$$'' and its siblings keep the later finding (Group 115, M4)", () => {
+  const forms = [
+    "rm -f a.txt; cat <<$$''\nx\n$$\nrm -rf build\n$",
+    'rm -f a.txt; cat <<$$""\nx\n$$\nrm -rf build\n$',
+    "rm -f a.txt; cat <<-$$''\nx\n\t$$\nrm -rf build\n$",
+    "rm -f a.txt; cat <<E$$'x'\ny\nE$$x\nrm -rf build\nE$x",
+  ];
+  for (const cmd of forms) {
+    const r = parseCommand(cmd);
+    assert.equal(r.verdict, 'DESTRUCTION', cmd);
+    assert.deepEqual(r.findings.map((f) => f.target), ['a.txt', 'build'], cmd);
+  }
+  // The odd run still decodes: <<$$$'x' names the delimiter $$x.
+  const odd = parseCommand("rm -f a.txt; cat <<$$$'x'\ny\n$$x\nrm -rf build");
+  assert.deepEqual(odd.findings.map((f) => f.target), ['a.txt', 'build']);
+});

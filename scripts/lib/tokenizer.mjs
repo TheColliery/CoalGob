@@ -32,6 +32,21 @@ function isCommandPosition(tokens) {
   return prev.type === 'word' && !prev.quoted && prev.commandPos === true && BRACKET_TEST_PRECEDERS.has(prev.value);
 }
 
+// Does the `$` at `i` OPEN a `$'..'` / `$".."` run? Bash's own token rule (16f bounce 2, H2 + M4): consecutive UNESCAPED `$`
+// characters pair off as `$$` (the PID parameter), so only an ODD run's last `$` is the opener; a `$` escaped by a backslash is a
+// literal and starts no run (`\$$'..'` is a literal dollar, then an opener). Counted backwards from `i` over the run, with the run's
+// first `$` dropped when an odd number of backslashes precede it. ONE predicate for the word scanner and the heredoc delimiter reader, so
+// the two cannot drift. CITED SOURCE: bash 5.x RAN (scratchpad/16f/b3-before.out, b3-after.out and the reviewer's rv-re3/rv-re4).
+function dollarOpensQuote(input, i) {
+  let k = i;
+  let run = 1;
+  while (k > 0 && input[k - 1] === '$') { k--; run++; }
+  let backslashes = 0;
+  while (k > 0 && input[k - 1] === '\\') { k--; backslashes++; }
+  if (backslashes % 2 === 1) run--;
+  return run % 2 === 1;
+}
+
 // ANSI-C quoting body (`$'...'`), shared by the word scanner and the heredoc delimiter (16f bounce M1: one decoder, never two
 // drifting copies). `start` is the index just after the opening `$'`. Returns { value, next, closed }; `next` is past the
 // closing quote (or the end of input when it never closes). Decodes exactly the escape set the word scanner always did.
@@ -320,14 +335,14 @@ export function tokenize(input) {
           }
           // `$'..'` is ANSI-C quoting (decoded like the word scanner does) and `$".."` is a double-quoted run whose `$` is dropped:
           // bash quote removal on the delimiter word (16f bounce M1; an unquoted `$EOF` stays the literal `$EOF`).
-          if (ch === '$' && input[i + 1] === "'") {
+          if (ch === '$' && input[i + 1] === "'" && dollarOpensQuote(input, i)) {
             const ansi = readAnsiC(input, i + 2);
             delim += ansi.value;
             i = ansi.next;
             if (!ansi.closed) errors.push('unterminated ANSI-C quote');
             continue;
           }
-          if (ch === '$' && input[i + 1] === '"') { i++; continue; }
+          if (ch === '$' && input[i + 1] === '"' && dollarOpensQuote(input, i)) { i++; continue; }
           if (ch === '"' || ch === "'") { quoteChar = ch; i++; continue; }
           if (ch === '\\' && i + 1 < n && input[i + 1] !== '\n') { delim += input[i + 1]; i += 2; continue; }
           if (' \t\n;&|()<>'.includes(ch)) break;
@@ -386,7 +401,7 @@ export function tokenize(input) {
       // stated: `\uHHHH`/`\UHHHHHHHH` unicode escapes are NOT decoded -
       // this parser's verb tables are ASCII strings by construction, so
       // a unicode-escaped spelling could never match one regardless.
-      if (ch === '$' && input[i + 1] === "'") {
+      if (ch === '$' && input[i + 1] === "'" && dollarOpensQuote(input, i)) {
         sawQuote = true;
         const ansi = readAnsiC(input, i + 2);
         value += ansi.value;
@@ -399,7 +414,7 @@ export function tokenize(input) {
       // is consumed without joining the value and the plain double-
       // quote branch below takes over unchanged (its own escaping rules
       // already apply - this is NOT ANSI-C quoting).
-      if (ch === '$' && input[i + 1] === '"') { i++; continue; }
+      if (ch === '$' && input[i + 1] === '"' && dollarOpensQuote(input, i)) { i++; continue; }
       if (ch === '\\' && !isWindowsDrivePath && /^[A-Za-z]:$/.test(input.slice(i - 2, i))) {
         isWindowsDrivePath = true;
       }

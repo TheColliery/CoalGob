@@ -3863,3 +3863,68 @@ test('truncate without a reference keeps its grow-only exemption, and a -r after
     assert.equal(verdictOf(cmd), 'NO_MATCH', cmd);
   }
 });
+
+// --- Group 111 (16f, census row CG-9; CodeRabbit PR #2 thread T10) - a
+// heredoc's OPERATOR LINE is ordinary shell and its BODIES start after that
+// line's newline, in the order the operators appeared. The tokenizer used to
+// swallow everything from the delimiter to the end of the line and then one
+// body, so (a) `cat <<EOF > out.txt` was flagged only because the redirect
+// was hidden (the other order reported DESTRUCTION), (b) a command after the
+// delimiter (`<<EOF && rm -rf build`) vanished from the finding set, and
+// (c) with two heredocs the second body was read as COMMANDS. The fix
+// queues each delimiter and reads the bodies when the operator line ends,
+// and ends the delimiter word at an unquoted metacharacter as bash does.
+// CITED SOURCE: bash 5.3.15 RUN live in a temp folder, every shape below,
+// scratchpad/16f/heredoc-probe.out (tail after the delimiter ran AFTER the
+// body; two heredocs read their bodies in order and only the last is
+// stdin; `<<EOF;echo`, `<<EOF>out`, `<<EOF|tr` end the delimiter at the
+// metacharacter; a quoted delimiter may hold spaces; `<<-` strips leading
+// tabs from the end line; `<<EOF > out2.txt` truncated out2.txt).
+// Axes: 5 STRUCTURAL (line vs body), 3 ORDER (bodies in operator order),
+// 1 SPELLING (quoted delimiter forms, `<<-`).
+test('a redirect after the heredoc delimiter is read, so both argument orders agree (Group 111, CG-9 leg a)', () => {
+  const after = parseCommand('cat <<EOF > out.txt\nbody\nEOF');
+  const before = parseCommand('cat > out.txt <<EOF\nbody\nEOF');
+  assert.equal(after.verdict, 'DESTRUCTION');
+  assert.deepEqual(after.findings.map((f) => f.target), ['out.txt']);
+  assert.deepEqual(after.findings.map((f) => f.target), before.findings.map((f) => f.target));
+});
+
+test('a command after the delimiter on the operator line is a segment of its own, in the finding set (Group 111, CG-9 leg b)', () => {
+  for (const cmd of ['rm -f a.txt; cat <<EOF && rm -rf build\nx\nEOF', 'rm -f a.txt; cat <<EOF;rm -rf build\nx\nEOF', 'rm -f a.txt; cat <<EOF&&rm -rf build\nx\nEOF']) {
+    const r = parseCommand(cmd);
+    assert.equal(r.verdict, 'DESTRUCTION', cmd);
+    assert.deepEqual(r.findings.map((f) => f.target), ['a.txt', 'build'], cmd);
+  }
+  const redirectGlued = parseCommand('cat <<EOF>out.txt\nx\nEOF');
+  assert.deepEqual(redirectGlued.findings.map((f) => f.target), ['out.txt']);
+});
+
+test('bodies are read in operator order and are never commands; the line after the last body is (Group 111, CG-9 leg c)', () => {
+  const two = parseCommand('cat <<A <<B\na\nA\nrm -rf build\nB');
+  assert.equal(two.verdict, 'OUT_OF_SCOPE');
+  assert.equal(two.findings[0].kind, 'unjudged');
+  const withTail = parseCommand('cat <<A <<B\nrm -rf one\nA\nrm -rf two\nB\nrm -rf three');
+  assert.equal(withTail.verdict, 'DESTRUCTION');
+  assert.deepEqual(withTail.findings.map((f) => f.target), ['three']);
+  // The same two heredocs on a pipeline's two commands: both bodies still follow the line.
+  assert.notEqual(verdictOf('cat <<A | cat <<B\nrm -rf one\nA\nrm -rf two\nB'), 'DESTRUCTION');
+});
+
+test('quoted delimiters, <<- tab stripping, a trailing comment, and an unterminated heredoc (Group 111, CG-9)', () => {
+  assert.deepEqual(parseCommand("cat <<'EOF' > out.txt\n$x\nEOF").findings.map((f) => f.target), ['out.txt']);
+  assert.deepEqual(parseCommand('cat <<"E O F" > out.txt\nrm -rf build\nE O F').findings.map((f) => f.target), ['out.txt']);
+  assert.notEqual(verdictOf('cat <<-EOF # note\n\trm -rf build\n\tEOF'), 'DESTRUCTION');
+  assert.equal(verdictOf('cat <<-EOF # note\n\trm -rf build\n\tEOF'), 'OUT_OF_SCOPE');
+  for (const cmd of ['cat <<EOF\nrm -rf build', 'cat <<A <<B\nx\nA']) {
+    const r = parseCommand(cmd);
+    assert.equal(r.verdict, 'OUT_OF_SCOPE', cmd);
+    assert.equal(r.findings[0].kind, 'unjudged', cmd);
+  }
+});
+
+test('the delimiter word is not an operand of the command (Group 111, CG-9)', () => {
+  const r = parseCommand('rm -rf build <<EOF\nx\nEOF');
+  assert.equal(r.verdict, 'DESTRUCTION');
+  assert.deepEqual(r.findings.map((f) => f.target), ['build']);
+});

@@ -71,6 +71,27 @@ export function tokenize(input) {
     parenDepth = 0;
   }
 
+  // CG-9 (16f, Group 111): heredoc delimiters wait here until the operator
+  // line ends - bash reads the BODIES after that line's newline, in the
+  // order the operators appeared, and the rest of the operator line is
+  // ordinary shell (RUN, bash 5.3.15, scratchpad/16f/heredoc-probe.out).
+  const pendingHeredocs = [];
+  function readHeredocBodies() {
+    for (const h of pendingHeredocs) {
+      let terminated = false;
+      while (i < n) {
+        const lineEndIdx = input.indexOf('\n', i);
+        const lineEnd = lineEndIdx === -1 ? n : lineEndIdx;
+        const line = input.slice(i, lineEnd);
+        const compareLine = h.stripTabs ? line.replace(/^\t+/, '') : line;
+        i = lineEndIdx === -1 ? n : lineEndIdx + 1;
+        if (compareLine === h.delim) { terminated = true; break; }
+      }
+      if (!terminated) errors.push('unterminated heredoc');
+    }
+    pendingHeredocs.length = 0;
+  }
+
   function fdPrefixAdjacent() {
     const last = tokens[tokens.length - 1];
     return last && last.type === 'word' && !last.quoted && /^[0-9]+$/.test(last.value) && last.end === i
@@ -82,7 +103,7 @@ export function tokenize(input) {
     const c = input[i];
 
     if (c === ' ' || c === '\t') { i++; continue; }
-    if (c === '\n') { pushSeparator('\n'); i++; continue; }
+    if (c === '\n') { pushSeparator('\n'); i++; readHeredocBodies(); continue; }
     if (c === ';') {
       // Inside an open arithmetic context, `;` is the C-style for-loop's
       // own clause separator (`for (( expr1 ; expr2 ; expr3 ))`, bash's
@@ -238,11 +259,16 @@ export function tokenize(input) {
         const opValue = input[i + 2] === '-' ? '<<-' : '<<';
         i += opValue.length;
         tokens.push({ type: 'op', value: opValue });
-        // A heredoc body is opaque to this parser (a heredoc is
-        // OUT_OF_SCOPE, never silently NO_MATCH) - swallow it whole so its
-        // internal newlines/`;`/`&&` never fabricate fake top-level
-        // segments, then force a segment break at its own boundary so the
-        // command that follows is never folded into the heredoc's segment.
+        // A heredoc BODY is opaque to this parser (a heredoc is
+        // OUT_OF_SCOPE, never silently NO_MATCH) - it is read whole when
+        // the operator line ends (readHeredocBodies), so its internal
+        // newlines/`;`/`&&` never fabricate fake top-level segments. The
+        // REST of the operator line is tokenized as ordinary shell: a
+        // redirect or a command after the delimiter is seen (CG-9). The
+        // delimiter word ends at an unquoted metacharacter, as bash's
+        // does (`<<EOF;echo`, `<<EOF>out`, `<<EOF|tr`), and may be
+        // quoted (`'..'`, `".."`, a backslash before a character) so
+        // it may hold spaces.
         while (i < n && (input[i] === ' ' || input[i] === '\t')) i++;
         let delim = '';
         let quoteChar = null;
@@ -253,23 +279,12 @@ export function tokenize(input) {
             delim += ch; i++; continue;
           }
           if (ch === '"' || ch === "'") { quoteChar = ch; i++; continue; }
-          if (ch === ' ' || ch === '\t' || ch === '\n') break;
+          if (ch === '\\' && i + 1 < n && input[i + 1] !== '\n') { delim += input[i + 1]; i += 2; continue; }
+          if (' \t\n;&|()<>'.includes(ch)) break;
           delim += ch; i++;
         }
         tokens.push({ type: 'word', value: delim, end: i });
-        while (i < n && input[i] !== '\n') i++;
-        if (i < n) i++;
-        let terminated = false;
-        while (i < n) {
-          const lineEndIdx = input.indexOf('\n', i);
-          const lineEnd = lineEndIdx === -1 ? n : lineEndIdx;
-          const line = input.slice(i, lineEnd);
-          const compareLine = opValue === '<<-' ? line.replace(/^\t+/, '') : line;
-          i = lineEndIdx === -1 ? n : lineEndIdx + 1;
-          if (compareLine === delim) { terminated = true; break; }
-        }
-        if (!terminated) errors.push('unterminated heredoc');
-        pushSeparator('\n');
+        pendingHeredocs.push({ delim, stripTabs: opValue === '<<-' });
       } else {
         fdPrefixAdjacent();
         tokens.push({ type: 'op', value: '<' }); i++;
@@ -420,6 +435,7 @@ export function tokenize(input) {
     }
   }
 
+  if (pendingHeredocs.length > 0) errors.push('unterminated heredoc');
   return { tokens, errors };
 }
 

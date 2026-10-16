@@ -1733,7 +1733,14 @@ function analyzeSegment(tokens, precededByPipe) {
   for (let idx = 0; idx < tokens.length; idx++) {
     const t = tokens[idx];
     if (t.type === 'op') {
-      if (t.value === '<<' || t.value === '<<-' || t.value === '<<<') { heredoc = true; continue; }
+      if (t.value === '<<' || t.value === '<<-') {
+        // The delimiter word that follows is the heredoc's own, never an operand (CG-9).
+        heredoc = true;
+        const delimiter = tokens[idx + 1];
+        if (delimiter && delimiter.type === 'word') idx++;
+        continue;
+      }
+      if (t.value === '<<<') { heredoc = true; continue; }
       if (t.value === '<' || t.value === '<>') {
         // Consume the target the same way an output redirect does, so it
         // never becomes word 0 and displaces the real verb - but never push

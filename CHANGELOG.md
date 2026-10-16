@@ -4,12 +4,12 @@ All notable changes to CoalGob are documented here. Format follows [Keep a Chang
 
 ## [0.1.0-beta.3] - 2026-10-16
 
-Six classifier misses closed; front-door link check
+Seven classifier misses closed; front-door link check
 
 ### Fixed
 
 - The command classifier no longer misses five forms (all five tests are pinned in `scripts/lib/parser.test.mjs`): `env -S` / `--split-string` in every spelling is now reported `OUT_OF_SCOPE` (kind `declared`, like `sh -c`) instead of `NO_MATCH`; `mv --backup=none` (and `off` and their unambiguous prefixes) is now `DESTRUCTION`, because no backup is made; `truncate` with a reference file (`-r` / `--reference`) is now `DESTRUCTION` for a relative size, because the grow-only exemption no longer applies; a heredoc on the operator line is read the way bash reads it (each delimiter queued, the rest of the line parsed as ordinary shell, bodies read in order, and the delimiter itself read with bash quote removal: `$'...'`, `$"..."`, and backslash escapes inside double quotes), so a command on the same line is classified and a delimiter is no longer reported as a path; and a backslash before `'`, `"` or `$'` inside a drive-letter path is now an unjudged tokenizer error instead of a silent `NO_MATCH`. A bare `mv -b a b` stays exempt, because the real `VERSION_CONTROL` environment is invisible to the classifier.
-- A sixth form is closed the same way: an even run of `$` before a quote (the shell's PID parameter `$$`) is no longer read as an ANSI-C quote opener, so a command after it is classified instead of silently missed; a heredoc delimiter follows the same rule.
+- Two more forms are closed the same way: an even run of `$` before a quote (the shell's PID parameter `$$`) is no longer read as an ANSI-C quote opener, so a command after it is classified instead of silently missed, including when a backslash-newline (a line continuation) is joined into the run first; a heredoc delimiter follows the same rule. A carriage return inside that `$` run, which MSYS bash (it deletes every CR) and GNU bash (it keeps the CR as an ordinary character) read differently, is now an unjudged tokenizer error, never a verdict.
 
 ### Changed
 

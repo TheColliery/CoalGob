@@ -4026,3 +4026,51 @@ test('the measured-safe backslash members stay literal in a drive-letter word (G
     assert.deepEqual(r.findings.map((f) => f.target), ['build'], cmd);
   }
 });
+
+// --- Group 114 (16f bounce M1, census row CG-9, the delimiter's quote removal) -
+// the heredoc delimiter word is a shell word: bash applies QUOTE REMOVAL to
+// it, so `<<$'EOF'`, `<<$"EOF"` and `<<"E\"OF"` name the delimiters EOF, EOF
+// and E"OF. The tokenizer kept the `$` (reading `$EOF`) and the backslash,
+// so the real delimiter line never matched, the body ran on, and the real
+// commands after it became body text: an incomplete finding set (the CG-9
+// leg (b) shape) or an unjudged `unterminated heredoc` that dropped the
+// earlier finding too. Quote removal applied: `'..'` literal, `".."` with a
+// backslash before `"`, `\`, `$` or a backtick removed, `$'..'` decoded as
+// ANSI-C (the same decoder the word scanner uses), `$".."` as `"..".`
+// CITED SOURCE: bash 5.x RUN live, every form below (scratchpad/16f/
+// b2-before.out): `rm -rf build` after the real delimiter RAN in all nine,
+// the parser missed it in all nine; in `"E\nOF"` the backslash before an
+// ordinary letter is KEPT (the control, unchanged). Each form carries an
+// earlier destruction (`rm -f a.txt`) so the incomplete-finding-set shape
+// is pinned too: both findings, in order.
+function heredocWith(openLine, ...rest) {
+  return ['rm -f a.txt; cat <<' + openLine, 'x', ...rest].join('\n');
+}
+test('the heredoc delimiter is read with bash quote removal: $\'..\', $"..", and a backslash inside double quotes (Group 114, CG-9)', () => {
+  const BT = String.fromCharCode(96);
+  const forms = [
+    heredocWith("$'EOF'", 'EOF', 'rm -rf build', '$EOF'),
+    heredocWith('$"EOF"', 'EOF', 'rm -rf build', '$EOF'),
+    heredocWith('"E' + DBS + '"OF"', 'E"OF', 'rm -rf build'),
+    heredocWith('"E' + DBS + DBS + 'OF"', 'E' + DBS + 'OF', 'rm -rf build'),
+    heredocWith('"E' + DBS + '$OF"', 'E$OF', 'rm -rf build'),
+    heredocWith('"E' + DBS + BT + 'OF"', 'E' + BT + 'OF', 'rm -rf build'),
+    heredocWith("$'E" + DBS + "x4fF'", 'EOF', 'rm -rf build'),
+    heredocWith("$'E" + DBS + "117F'", 'EOF', 'rm -rf build'),
+    heredocWith("$'E" + DBS + "tOF'", 'E\tOF', 'rm -rf build'),
+  ];
+  for (const cmd of forms) {
+    const r = parseCommand(cmd);
+    assert.equal(r.verdict, 'DESTRUCTION', cmd);
+    assert.deepEqual(r.findings.map((f) => f.target), ['a.txt', 'build'], cmd);
+  }
+});
+
+test('a backslash before an ordinary letter inside a quoted delimiter is kept, as bash keeps it (Group 114, CG-9)', () => {
+  const kept = parseCommand(heredocWith('"E' + DBS + 'nOF"', 'E' + DBS + 'nOF', 'rm -rf build'));
+  assert.deepEqual(kept.findings.map((f) => f.target), ['a.txt', 'build']);
+  // And a delimiter that never matches is still an unjudged unterminated heredoc, never a silent pass.
+  const open = parseCommand(heredocWith("$'EOF'", 'rm -rf build'));
+  assert.equal(open.verdict, 'OUT_OF_SCOPE');
+  assert.equal(open.findings[0].kind, 'unjudged');
+});

@@ -32,6 +32,43 @@ function isCommandPosition(tokens) {
   return prev.type === 'word' && !prev.quoted && prev.commandPos === true && BRACKET_TEST_PRECEDERS.has(prev.value);
 }
 
+// ANSI-C quoting body (`$'...'`), shared by the word scanner and the heredoc delimiter (16f bounce M1: one decoder, never two
+// drifting copies). `start` is the index just after the opening `$'`. Returns { value, next, closed }; `next` is past the
+// closing quote (or the end of input when it never closes). Decodes exactly the escape set the word scanner always did.
+function readAnsiC(input, start) {
+  const n = input.length;
+  let i = start;
+  let value = '';
+  let closed = false;
+  while (i < n) {
+    const dc = input[i];
+    if (dc === "'") { i++; closed = true; break; }
+    if (dc === '\\' && i + 1 < n) {
+      const esc = input[i + 1];
+      const simple = {
+        a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f', n: '\n',
+        r: '\r', t: '\t', v: '\v', '\\': '\\', "'": "'", '"': '"', '?': '?',
+      };
+      if (esc in simple) { value += simple[esc]; i += 2; continue; }
+      if (esc === 'x') {
+        const hex = /^[0-9a-fA-F]{1,2}/.exec(input.slice(i + 2, i + 4));
+        if (hex) { value += String.fromCharCode(parseInt(hex[0], 16)); i += 2 + hex[0].length; continue; }
+      }
+      if (/[0-7]/.test(esc)) {
+        const oct = /^[0-7]{1,3}/.exec(input.slice(i + 1, i + 4));
+        if (oct) { value += String.fromCharCode(parseInt(oct[0], 8) & 0xff); i += 1 + oct[0].length; continue; }
+      }
+      if (esc === 'c' && i + 2 < n) {
+        value += String.fromCharCode(input[i + 2].toUpperCase().charCodeAt(0) ^ 0x40);
+        i += 3; continue;
+      }
+      value += esc; i += 2; continue;
+    }
+    value += dc; i++;
+  }
+  return { value, next: i, closed };
+}
+
 // ponytail: 206 lines at declaration (defence round 3) - over the 50-line
 // function-length signal. The bracket/paren/redirect branches could split
 // into helpers, but see the file-header declaration: extraction is
@@ -276,8 +313,21 @@ export function tokenize(input) {
           const ch = input[i];
           if (quoteChar) {
             if (ch === quoteChar) { quoteChar = null; i++; continue; }
+            // Inside double quotes a backslash escapes only `"`, `\`, `$` and a backtick (bash quote removal); before any other
+            // character it is kept (RUN, bash 5.x: `"E\nOF"` is the delimiter E\nOF).
+            if (quoteChar === '"' && ch === '\\' && i + 1 < n && '"\\$`'.includes(input[i + 1])) { delim += input[i + 1]; i += 2; continue; }
             delim += ch; i++; continue;
           }
+          // `$'..'` is ANSI-C quoting (decoded like the word scanner does) and `$".."` is a double-quoted run whose `$` is dropped:
+          // bash quote removal on the delimiter word (16f bounce M1; an unquoted `$EOF` stays the literal `$EOF`).
+          if (ch === '$' && input[i + 1] === "'") {
+            const ansi = readAnsiC(input, i + 2);
+            delim += ansi.value;
+            i = ansi.next;
+            if (!ansi.closed) errors.push('unterminated ANSI-C quote');
+            continue;
+          }
+          if (ch === '$' && input[i + 1] === '"') { i++; continue; }
           if (ch === '"' || ch === "'") { quoteChar = ch; i++; continue; }
           if (ch === '\\' && i + 1 < n && input[i + 1] !== '\n') { delim += input[i + 1]; i += 2; continue; }
           if (' \t\n;&|()<>'.includes(ch)) break;
@@ -338,35 +388,10 @@ export function tokenize(input) {
       // a unicode-escaped spelling could never match one regardless.
       if (ch === '$' && input[i + 1] === "'") {
         sawQuote = true;
-        i += 2;
-        let closed = false;
-        while (i < n) {
-          const dc = input[i];
-          if (dc === "'") { i++; closed = true; break; }
-          if (dc === '\\' && i + 1 < n) {
-            const esc = input[i + 1];
-            const simple = {
-              a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f', n: '\n',
-              r: '\r', t: '\t', v: '\v', '\\': '\\', "'": "'", '"': '"', '?': '?',
-            };
-            if (esc in simple) { value += simple[esc]; i += 2; continue; }
-            if (esc === 'x') {
-              const hex = /^[0-9a-fA-F]{1,2}/.exec(input.slice(i + 2, i + 4));
-              if (hex) { value += String.fromCharCode(parseInt(hex[0], 16)); i += 2 + hex[0].length; continue; }
-            }
-            if (/[0-7]/.test(esc)) {
-              const oct = /^[0-7]{1,3}/.exec(input.slice(i + 1, i + 4));
-              if (oct) { value += String.fromCharCode(parseInt(oct[0], 8) & 0xff); i += 1 + oct[0].length; continue; }
-            }
-            if (esc === 'c' && i + 2 < n) {
-              value += String.fromCharCode(input[i + 2].toUpperCase().charCodeAt(0) ^ 0x40);
-              i += 3; continue;
-            }
-            value += esc; i += 2; continue;
-          }
-          value += dc; i++;
-        }
-        if (!closed) { errors.push('unterminated ANSI-C quote'); i = n; brokeOnError = true; break; }
+        const ansi = readAnsiC(input, i + 2);
+        value += ansi.value;
+        i = ansi.next;
+        if (!ansi.closed) { errors.push('unterminated ANSI-C quote'); i = n; brokeOnError = true; break; }
         continue;
       }
       // Locale-translation quoting (`$"..."`) - with no translation

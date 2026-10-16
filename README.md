@@ -11,6 +11,7 @@ agent, so nothing installs, blocks, or reroutes anything today.
 
 ![license](https://img.shields.io/badge/license-Apache_2.0-blue)
 ![status](https://img.shields.io/badge/status-beta-orange)
+![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/TheColliery/CoalGob?utm_source=oss&utm_medium=github&utm_campaign=TheColliery%2FCoalGob&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
 
 **Part of [TheColliery](https://github.com/TheColliery)** — siblings: **[CoalMine](https://github.com/TheColliery/CoalMine)** (quality canaries) · **[CoalTipple](https://github.com/TheColliery/CoalTipple)** (model/effort routing) · **[CoalBoard](https://github.com/TheColliery/CoalBoard)** (consensus & debate) · **[CoalHearth](https://github.com/TheColliery/CoalHearth)** (session warm-resume) · **[CoalFace](https://github.com/TheColliery/CoalFace)** (fan-out discipline) · **[CoalWash](https://github.com/TheColliery/CoalWash)** (memory defrag) · **[CoalLedger](https://github.com/TheColliery/CoalLedger)** (docs health).
 
@@ -100,4 +101,4 @@ because none ships yet.
 
 ## License
 
-[Apache-2.0](LICENSE), see [NOTICE](NOTICE) for attribution terms.
+[Apache-2.0](LICENSE), see [NOTICE](NOTICE) for the copyright and series line.

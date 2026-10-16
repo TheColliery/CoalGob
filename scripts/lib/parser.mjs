@@ -1242,9 +1242,12 @@ function truncateGrowSize(args) {
       // joined or space-separated) is the SAME flag - `isLongOptionMatch`
       // covers the exact spelling too, replacing the two literal checks
       // this used to need. `--reference`'s own value is DELIBERATELY not
-      // recognized here - it is a different flag serving a different
-      // purpose (Set Z1+Z6: skip its value so it is never miscounted as
-      // a target) and never feeds the grow-only SAFETY check.
+      // recognized HERE - this returns the SIZE operand only (Set Z1+Z6:
+      // the reference value is skipped so it is never miscounted as a
+      // target). The reference still decides the grow-only SAFETY check:
+      // truncateHasReference, tested by the caller, withdraws the
+      // exemption, because a relative size is taken against the
+      // reference file (CG-8; this comment said the opposite until 16f).
       const { name, flagValue } = splitLongOption(w);
       if (isLongOptionMatch(name, '--size', TRUNCATE_LONG_OPTIONS)) {
         size = flagValue !== undefined ? flagValue : args[i + 1]?.value;
@@ -1254,10 +1257,32 @@ function truncateGrowSize(args) {
     const cluster = truncateClusterFlag(w);
     if (cluster && cluster.flag === 's') { size = cluster.value !== undefined ? cluster.value : args[i + 1]?.value; continue; }
     // cluster.flag === 'r': this token belongs entirely to -r/--reference
-    // (it claimed the rest first) - never feeds the grow-only check, same
-    // boundary the long-option branch above already states for --reference.
+    // (it claimed the rest first) - it is no SIZE operand; the caller's
+    // truncateHasReference sees it and withdraws the grow-only exemption.
   }
   return size;
+}
+
+// Census row CG-8 (16f, Group 110): is a REFERENCE file named before `--`?
+// With one, truncate takes a relative SIZE (`+`, `>`, `%`, `-`, ...)
+// against the REFERENCE file's size, not the target's, so a "grow-only"
+// modifier can shrink the target (RUN live, GNU coreutils 8.32:
+// `truncate -r small.txt -s +0 big.txt` cut a 1000-byte file to the 4 bytes
+// of small.txt). Spellings: `-r` (separate or joined value, alone or in a
+// cluster - the cluster scan stops at the first value-taking letter, so the
+// letter is a reference only when it is reached first), `--reference` and
+// every unambiguous prefix, joined or separate.
+function truncateHasReference(args) {
+  for (const a of args) {
+    const w = a.value;
+    if (w === '--') return false;
+    if (w.startsWith('--')) {
+      if (isLongOptionMatch(splitLongOption(w).name, '--reference', TRUNCATE_LONG_OPTIONS)) return true;
+      continue;
+    }
+    if (truncateClusterFlag(w)?.flag === 'r') return true;
+  }
+  return false;
 }
 
 // cmd.exe builtins sharing one grammar: `/`-prefixed switches. CITED
@@ -1415,10 +1440,12 @@ function analyzeDestructionVerb(verbLower, args, precededByPipe) {
   }
   if (verbLower === 'truncate') {
     const sizeValue = truncateGrowSize(args);
-    if (sizeValue && TRUNCATE_GROW_ONLY_PREFIXES.has(sizeValue[0])) {
+    if (sizeValue && TRUNCATE_GROW_ONLY_PREFIXES.has(sizeValue[0]) && !truncateHasReference(args)) {
       // A grow-only modifier (-s/--size, joined or separated) can never
       // shrink the file, regardless of its current size - the class of
-      // truncate shapes provably safe without a runtime stat.
+      // truncate shapes provably safe without a runtime stat. NOT with a
+      // reference file (CG-8): the modifier is then relative to the
+      // reference's size, so it can shrink the target.
       return { verdict: 'NO_MATCH' };
     }
   }

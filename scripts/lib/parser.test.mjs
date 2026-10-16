@@ -3829,3 +3829,37 @@ test('mv --backup=CONTROL: a CONTROL that backs up, or that mv refuses, leaves t
     assert.equal(verdictOf(cmd), 'NO_MATCH', cmd);
   }
 });
+
+// --- Group 110 (16f, census row CG-8; CodeRabbit PR #2 thread T8) - with a
+// REFERENCE file, truncate's relative SIZE modifiers are taken against the
+// reference file, not against the target, so `+`, `>` and `%` can shrink the
+// target and the grow-only exemption must not apply. CITED SOURCE: GNU
+// coreutils 8.32 `truncate --help` ("-r, --reference=RFILE base size on
+// RFILE"; "SIZE is an integer ... if -r is used the size is relative to
+// RFILE" is the manual's rule, and RUN live: a 4-byte small.txt and a
+// 1000-byte big.txt went to 4 bytes under `truncate -r small.txt -s +0
+// big.txt`, scratchpad/16e/gnu.out). Axes: 1 SPELLING (-r separate, joined
+// `-rsmall`, clustered `-cr`, --reference separate and `=`, every
+// unambiguous long prefix `--ref`), 3 OVERRIDE ORDER n/a (the reference
+// changes the base whatever the order of -r and -s), `--` ends the flags
+// (a file named -r after `--` is no reference).
+test('truncate with a reference file is a DESTRUCTION for every relative size modifier and every spelling of the reference (Group 110, CG-8)', () => {
+  const shrinks = [
+    'truncate -r small.txt -s +0 big.txt', 'truncate --reference=small.txt --size=+0 big.txt',
+    'truncate -s +0 -r small.txt big.txt', 'truncate -cr small.txt -s +0 big.txt',
+    'truncate -rsmall.txt -s +0 big.txt', 'truncate --reference small.txt --size +0 big.txt',
+    'truncate --ref=small.txt --siz=+0 big.txt', "truncate -r small.txt -s '>0' big.txt",
+    'truncate -r small.txt --size=%2 big.txt', 'truncate -r small.txt -s+0 big.txt',
+  ];
+  for (const cmd of shrinks) {
+    const r = parseCommand(cmd);
+    assert.equal(r.verdict, 'DESTRUCTION', cmd);
+    assert.equal(r.findings[0].target, 'big.txt', cmd);
+  }
+});
+
+test('truncate without a reference keeps its grow-only exemption, and a -r after -- is a file name (Group 110, CG-8)', () => {
+  for (const cmd of ['truncate -s +10 big.txt', "truncate -s '>0' big.txt", 'truncate -s %2 big.txt', 'truncate -cs+10 big.txt', 'truncate --size=+10 big.txt', 'truncate -s +10 -- -r big.txt']) {
+    assert.equal(verdictOf(cmd), 'NO_MATCH', cmd);
+  }
+});

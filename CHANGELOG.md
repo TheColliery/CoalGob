@@ -6,6 +6,7 @@ All notable changes to CoalGob are documented here. Format follows [Keep a Chang
 
 ### Changed
 
+- `.github/workflows/front-door-links.yml` re-copied by blob `f0cc9ec0` from the `.github` canon at `7794678` (the job is renamed `front-door-links`), no shipped behaviour change.
 - Tooling and CI follow the `.github` canon at `bea2b3d`, no shipped behaviour change. Re-copied by blob from the overlay: `scripts/lib/wave-run.mjs` `b60827c6`, `scripts/lib/wave-run.test.mjs` `bccbaa58`, `scripts/verify-release-shape.mjs` `270e43d1`, `scripts/verify-release-shape.test.mjs` `7c2b35c4` and `scripts/release-notes.test.mjs` `f9dde432`; `scripts/lib/machine-reading.mjs` `5f861a34`, `scripts/lib/git-env-census.mjs` `82f20dac`, `scripts/lib/git-env-census.test.mjs` `c6b301cd` and `scripts/lib/git-env-census.vectors.mjs` `6dc3ad82` already equal the canon. Action pins moved to the canon's: `actions/setup-node` `949feb2413d6458794dcd2491c4babbbce0c15c1` (v7.1.0) in `ci.yml`, `coverage.yml` and `create-release.yml`, and `github/codeql-action` `24c54180a607b1449ed407dd24f251e4e9147c8d` (v4) in `codeql.yml` and `scorecard.yml`; `NOTICE` joins `scorecard.yml`'s `paths-ignore`.
 - `NOTICE` takes the canon template's wording (`CoalGob`, `Copyright 2026 HetCreep`, the TheColliery series line, "licensed under Apache-2.0"); the Origin line and the Apache-2.0 section 4(d) sentence are gone.
 - The README gains a CodeRabbit pull-request reviews badge.

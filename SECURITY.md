@@ -24,7 +24,7 @@ The repository carries a local secret scan, `scripts/secret-gate.mjs`, that the 
 
 CoalGob has no generated `plugin/` distribution and no `verify.mjs` gate yet — the shipped surface is source you can read: `scripts/lib/parser.mjs`, `scripts/lib/tokenizer.mjs`, and their tests. `node scripts/test.mjs` runs the zero-dependency suite with an explicit file list (a missing listed file fails loud). Zero dependencies — no lockfile, nothing to `npm audit`.
 
-<!-- version-transition: SkillSpector scan—re-scan is event-driven (a new SkillSpector version or a genuinely new attack surface, maintainer-commanded), NOT per release; record the version/score/date/commit here only after a real scan. -->
+<!-- version-transition: SkillSpector scan—the re-scan is automatic on one event, once a scannable surface (a skill, a hook or a command in a plugin/ dist) ships: this repo's own version bump, gated by a per-repo baseline diff; a genuinely new attack surface is a second trigger, by hand. Record the version/score/date/commit here only after a real scan. -->
 ## Independent Scanning—NVIDIA SkillSpector
 
 No [NVIDIA SkillSpector](https://github.com/NVIDIA/skillspector) scan has been run against CoalGob: it ships no skill and no `plugin/` dist for the scanner to read. This section will pin the last scan actually verified once a scannable surface exists.

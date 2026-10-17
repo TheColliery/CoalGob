@@ -45,7 +45,7 @@ do would turn CoalGob into a general command classifier instead of a destruction
 
 ## Status
 
-**Pre-release `0.1.0-beta.3`.** The shipped surface is the classifier engine and nothing else:
+**Pre-release `0.1.0-beta.4`.** The shipped surface is the classifier engine and nothing else:
 
 - **Ships:** `scripts/lib/tokenizer.mjs` and `scripts/lib/parser.mjs` — a pure function that takes a
   Bash-style command string and returns a three-valued verdict — and the test suite that pins it
@@ -88,8 +88,8 @@ map for whoever wants to get past it.
   at one place and not at its sibling. **17 of the 18 are closed; 1 remains open.** The audit is a
   lower bound: a second pass from a different starting angle could find more.
 - **Blind attack rounds** — fresh attackers given only the parser and its published scope — have
-  found further root causes. **At least 11 are known and open** (7 from one round, at least 2 from a
-  later one, and 2 from a class-by-class read of a peer guard's fixes; one of the 7 is the open site
+  found further root causes. **At least 10 are known and open** (6 from one round, at least 2 from a
+  later one, and 2 from a class-by-class read of a peer guard's fixes; one of the 6 is the open site
   above).
 - **An outside AI review** (the CodeRabbit full review) found **5** further root causes in the
   classifier and tokenizer. **All 5 are closed**; they are not part of the open total above.

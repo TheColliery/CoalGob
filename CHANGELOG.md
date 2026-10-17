@@ -2,7 +2,13 @@
 
 All notable changes to CoalGob are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
-## [Unreleased]
+## [0.1.0-beta.4] - 2026-10-17
+
+A carriage return can no longer hide a destroyer verb
+
+### Fixed
+
+- A carriage return outside a heredoc body that is not at a line end, and a backslash directly before a carriage return, is now an unjudged tokenizer error (`OUT_OF_SCOPE`) instead of a silent `NO_MATCH`: a bash that deletes every carriage return (MSYS bash) joins `r<CR>m -rf build` into `rm -rf build`, while a bash that keeps it (GNU bash) does not, so no single verdict is right. This is the general rule behind the carriage-return case in the `$` run named under `0.1.0-beta.3`, which stays true as a special case. A destroyer target that ends in a carriage return before the newline (`rm -rf build<CR><NL>`) is reported twice, with and without the carriage return, so each dialect finds the path it removes; a heredoc terminator line that matches the delimiter only once a trailing carriage return is ignored is an unjudged error too.
 
 ### Changed
 
@@ -167,7 +173,7 @@ real delete. `ad57e4c` closed a module-header sink list naming six entries after
 added five more. Standing rule from here: a comment or header describing coverage is updated in the
 SAME commit that changes the coverage, never after.
 
-**Deliberately absent, each owed at a stated trigger (as of 0.1.0-beta.3):**
+**Deliberately absent, each owed at a stated trigger (as of 0.1.0-beta.4):**
 
 - `hooks/`, `skills/`, `agents/`, `commands/`, interception code, `scripts/build-plugin.mjs` — no hook, skill, or plugin surface exists yet; owed once the interception
   mechanism (emitter + hook wiring) is built. (`scripts/lib/parser.mjs` + `scripts/test.mjs` are no

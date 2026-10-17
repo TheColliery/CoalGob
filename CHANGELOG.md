@@ -2,6 +2,12 @@
 
 All notable changes to CoalGob are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow SemVer (the canonical version lives in `.claude-plugin/plugin.json`).
 
+## [Unreleased]
+
+### Changed
+
+- Test only, no shipped behaviour change: the carriage-return test for a bash that keeps the character (GNU bash) in `scripts/lib/parser.test.mjs` is renamed to what it checks and gains a positive row, `rm -rf build<CR><NL>` run against a fixture folder holding both `build` and `build<CR>`, asserting that `build<CR>` is removed, `build` stays, and the parser names both targets.
+
 ## [0.1.0-beta.4] - 2026-10-17
 
 A carriage return can no longer hide a destroyer verb

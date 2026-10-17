@@ -1920,6 +1920,15 @@ function classifyResolved(words, resolved, heredoc, fdOutOfScope, precededByPipe
 // key - `reason`/`kind` instead (see the `kind` partition comment near
 // KIND_DECLARED above).
 
+// CG-14 (17c): a target ending in a CR came from a word that ends at a CR directly before a newline. GNU bash keeps that CR in the name, MSYS
+// bash treats it as the line end and deletes it, so `rm -rf build<CR><NL>` removes `build<CR>` on GNU and `build` on MSYS: both are reported
+// (the GNU word first, the MSYS reading second), never one guess. A CR elsewhere in a word is a tokenizer error and never reaches a target.
+function withMsysTarget(finding) {
+  if (typeof finding.target !== 'string' || !finding.target.endsWith('\r')) return [finding];
+  const msys = finding.target.replace(/\r+$/, '');
+  return msys === '' ? [finding] : [finding, { ...finding, target: msys }];
+}
+
 export function parseCommand(input) {
   if (typeof input !== 'string') {
     return { verdict: 'OUT_OF_SCOPE', findings: [{ reason: 'non-string input' }] };
@@ -1944,7 +1953,8 @@ export function parseCommand(input) {
   // never the public one.
   const destructions = results
     .filter((r) => r.verdict === 'DESTRUCTION')
-    .flatMap((r) => r.findings.map((f) => ({ verdict: 'DESTRUCTION', ...f })));
+    .flatMap((r) => r.findings.map((f) => ({ verdict: 'DESTRUCTION', ...f })))
+    .flatMap(withMsysTarget);
   if (destructions.length > 0) return { verdict: 'DESTRUCTION', findings: destructions };
 
   const outOfScope = results.filter((r) => r.verdict === 'OUT_OF_SCOPE');

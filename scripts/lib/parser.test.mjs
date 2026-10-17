@@ -4284,3 +4284,97 @@ test('GNU bash keeps the CR, so the H5 witness runs the rm and the parser must n
   assert.equal(fs.existsSync(path.join(dir, 'build')), false, 'GNU bash ran the rm');
   assert.notEqual(verdictOf(witness), 'NO_MATCH');
 });
+
+// --- Group 118 (17c, census row CG-14, 9a-F9 widened; the 16f RE-INSPECT 4 H6) - the CG-13 rule widened from the `$` region to every
+// word. MSYS bash DELETES every CR before it tokenizes, GNU bash keeps it as an ordinary character (CITED SOURCE: RAN on this box's MSYS
+// bash 5.3.15, scratchpad/16f/rv-re4a.out and rv-re4b.out: 67 of 606 single-CR-insertion rows ran the rm while the parser said NO_MATCH;
+// GNU bash READ, bash manual 3.1.2.1, and RUN by the GNU leg below wherever CI offers one). So a CR inside or beside a word hides a
+// verb on MSYS (`r<CR>m`, `rm<CR>`, a CR after `;`, a CR inside a quoted verb, a CR after a backslash-quote): the ONE rule is that a CR
+// outside a heredoc body that is not directly before a newline, and a backslash directly before a CR (MSYS joins the line), is a
+// tokenizer error (OUT_OF_SCOPE unjudged), the CG-13 shape. A CR directly before a newline is the line end on MSYS and the last
+// character of the word on GNU: the word is kept as GNU reads it AND, when it is a target, its MSYS reading (the CR removed) is
+// reported beside it, two targets (`rm -rf build<CR><NL>` removes `build` on MSYS and `build<CR>` on GNU). Inside a heredoc body a CR is
+// body text, except a terminator line that matches the delimiter only once a trailing CR is ignored: the two dialects end the body on
+// different lines there (MSYS: here; GNU: later), so it is an error too. `<CR>` is a real carriage return, `<NL>` a real newline.
+const H6_WITNESSES = [
+  BSC('r<CR>m -rf build'),
+  BSC('rm<CR> -rf build'),
+  BSC('echo a;<CR> rm -rf build'),
+  BSC('"r<CR>m" -rf build'),
+  BSC("echo <BS><CR>'; rm -rf build; echo ''<BS>'"),
+];
+test("a CR inside or beside a word is the dialect error: the five H6 witnesses are unjudged, never NO_MATCH (Group 118, CG-14)", () => {
+  for (const cmd of H6_WITNESSES) {
+    const r = parseCommand(cmd);
+    assert.equal(r.verdict, 'OUT_OF_SCOPE', JSON.stringify(cmd));
+    assert.equal(r.findings[0].kind, 'unjudged', JSON.stringify(cmd));
+  }
+});
+
+test("a backslash directly before a CR is the dialect error even when a newline follows: MSYS joins the line (Group 118, CG-14)", () => {
+  for (const cmd of [BSC('r<BS><CR><NL>m -rf build'), BSC('rm -rf <BS><CR><NL>build'), BSC('echo a <BS><CR>')]) {
+    const r = parseCommand(cmd);
+    assert.equal(r.verdict, 'OUT_OF_SCOPE', JSON.stringify(cmd));
+    assert.equal(r.findings[0].kind, 'unjudged', JSON.stringify(cmd));
+  }
+});
+
+test("a CR directly before a newline is a line end: a target there is reported twice, the GNU word and its MSYS reading (Group 118, CG-14)", () => {
+  const rm = parseCommand(BSC('rm -rf build<CR><NL>'));
+  assert.equal(rm.verdict, 'DESTRUCTION');
+  assert.deepEqual(rm.findings.map((f) => f.target), ['build\r', 'build']);
+  // A CRLF script whose lines are otherwise clean: the destroyer line is flagged on both readings, the clean line reads NO_MATCH.
+  const script = parseCommand(BSC('rm -rf build<CR><NL>echo ok<CR><NL>'));
+  assert.equal(script.verdict, 'DESTRUCTION');
+  assert.deepEqual(script.findings.map((f) => f.target), ['build\r', 'build']);
+  assert.equal(verdictOf(BSC('echo ok<CR><NL>')), 'NO_MATCH');
+  assert.equal(verdictOf(BSC('echo ok<CR><NL>ls -la<CR><NL>')), 'NO_MATCH');
+  // A target that does not end in a CR is unchanged: one target, no sibling.
+  assert.deepEqual(parseCommand('rm -rf build\nls').findings.map((f) => f.target), ['build']);
+});
+
+test("a heredoc body keeps its CRs, but a terminator line the two dialects read differently is the dialect error (Group 118, CG-14)", () => {
+  // A heredoc is always unjudged ("heredoc present"); the pins read the REASON. A fully CRLF heredoc: the delimiter carries the CR and every
+  // terminator line carries it too, consistent in both dialects, so it is the plain heredoc admission and not the CR error.
+  const reasonOf = (cmd) => parseCommand(cmd).findings[0].reason;
+  assert.equal(reasonOf(BSC('cat <<EOF<CR><NL>x<CR><NL>EOF<CR><NL>')), 'heredoc present');
+  // An LF delimiter, a CRLF terminator, a later LF terminator: MSYS ends the body at the CRLF line, GNU at the last one, so the rm after
+  // the first is run by MSYS and is body text to GNU.
+  const mixed = parseCommand(BSC('cat <<EOF<NL>x<NL>EOF<CR><NL>rm -rf build<NL>EOF<NL>'));
+  assert.equal(mixed.verdict, 'OUT_OF_SCOPE');
+  assert.equal(mixed.findings[0].kind, 'unjudged');
+  assert.notEqual(mixed.findings[0].reason, 'heredoc present');
+  // Plain LF heredocs are untouched.
+  assert.equal(reasonOf('cat <<EOF\nx\nEOF\n'), 'heredoc present');
+});
+
+// GNU leg for CG-14: what GNU bash does with the H6 witnesses, found by CAPABILITY (a CR kept in a variable), a visible skip on MSYS.
+// Same fixture rails as Group 117's leg (temp root under os.tmpdir() asserted, no GIT_*, a killing timeout, a narrow registered teardown).
+test('GNU bash keeps the CR, so a witness runs the rm only where the parser says something (Group 118, GNU leg)', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg18-gnu-'));
+  t.after(() => {
+    if (fs.realpathSync.native(dir).startsWith(fs.realpathSync.native(os.tmpdir()) + path.sep)) fs.rmSync(dir, { recursive: true, force: true });
+  });
+  assert.ok(fs.existsSync(dir) && fs.realpathSync.native(dir).startsWith(fs.realpathSync.native(os.tmpdir()) + path.sep), 'fixture folder under os.tmpdir()');
+  fs.writeFileSync(path.join(dir, 'probe.sh'), 'v=a\rb\necho ${#v}\n');
+  const p = bashRun(path.join(dir, 'probe.sh'), dir);
+  if (p.error || p.status !== 0 || p.stdout.trim() !== '3') {
+    t.skip('this bash does not keep a CR as a character (printed ' + JSON.stringify(p.error ? String(p.error.code) : (p.stdout || '').trim()) + ', GNU bash prints 3): MSYS/Cygwin bash deletes it');
+    return;
+  }
+  const rows = [...H6_WITNESSES, BSC('rm -rf build<CR><NL>'), BSC('r<BS><CR><NL>m -rf build')];
+  for (const [k, cmd] of rows.entries()) {
+    fs.rmSync(path.join(dir, 'build'), { recursive: true, force: true });
+    fs.mkdirSync(path.join(dir, 'build'));
+    fs.writeFileSync(path.join(dir, 'w' + k + '.sh'), cmd + '\n');
+    bashRun(path.join(dir, 'w' + k + '.sh'), dir);
+    const ran = !fs.existsSync(path.join(dir, 'build'));
+    if (ran) assert.notEqual(verdictOf(cmd), 'NO_MATCH', 'GNU bash ran the rm: ' + JSON.stringify(cmd));
+  }
+  // On GNU the CRLF target is `build<CR>`, not `build`: the directory survives and the parser names both readings.
+  fs.rmSync(path.join(dir, 'build'), { recursive: true, force: true });
+  fs.mkdirSync(path.join(dir, 'build'));
+  fs.writeFileSync(path.join(dir, 'crlf.sh'), BSC('rm -rf build<CR><NL>'));
+  bashRun(path.join(dir, 'crlf.sh'), dir);
+  assert.equal(fs.existsSync(path.join(dir, 'build')), true, 'GNU removed build<CR>, not build');
+});

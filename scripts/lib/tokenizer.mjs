@@ -32,22 +32,19 @@ function isCommandPosition(tokens) {
   return prev.type === 'word' && !prev.quoted && prev.commandPos === true && BRACKET_TEST_PRECEDERS.has(prev.value);
 }
 
-const DOLLAR_CR_ERROR = 'a carriage return before a quote opener is read differently by MSYS bash and GNU bash';
+const CR_ERROR = 'a carriage return that is not at a line end is read differently by MSYS bash and GNU bash';
 
-// Does the `$` at `i` OPEN a `$'..'` / `$".."` run? Bash's own token rule (16f bounce 2, H2 + M4; bounce 3, H3; bounce 4, H4 + H5):
-// consecutive UNESCAPED `$` characters pair off as `$$` (the PID parameter), so only an ODD run's last `$` is the opener; a `$` escaped by
-// a backslash is a literal and starts no run (`\$$'..'` is a literal dollar, then an opener). Bash removes a backslash-newline (a line
-// continuation) BEFORE it tokenizes, so a `$`, a backslash-newline and `$'..'` read to it as `$$'..'`: the region of `$`, backslash, CR and newline characters before `i` is
-// read FORWARD, the way bash joins the line (counting raw characters backwards could not tell a continuation from a real newline). In that
-// region: a backslash-newline pair is skipped; a backslash before a `$` or a backslash is an escaped literal that ends the run; a newline
-// ends it. A CR is where the two bash dialects part ways: MSYS bash (Git Bash) DELETES every CR before tokenizing, GNU bash keeps it as an
-// ordinary character and only backslash-newline continues a line. So a CR in the region that is not a plain line end (a CR directly before a
-// newline, no backslash before it, which both dialects read as a line end) is AMBIGUOUS: returns null, and each call site pushes a tokenizer
-// error (OUT_OF_SCOPE unjudged), the same shape as the drive-path backslash (CG-10). This also drops bounce 3's backslash-CR-newline
-// continuation skip, which was MSYS's reading only. ONE predicate for the word scanner and the heredoc delimiter reader, so the two cannot
-// drift. Returns true (opens), false (does not), or null (ambiguous). CITED SOURCE: bash 5.x RAN (scratchpad/16f/b3-*.out, b4-before.out,
-// b4-after.out; the reviewer's rv-re2b / rv-re3a / rv-re3b brute force; MSYS 5.3.15 deletes a CR, GNU bash READ: manual 3.1.2.1, and RUN by the
-// GNU leg of parser.test.mjs Group 117 wherever CI offers a GNU bash).
+// Does the `$` at `i` OPEN a `$'..'` / `$".."` run? Bash's own token rule (16f bounce 2, H2 + M4; bounce 3, H3): consecutive UNESCAPED
+// `$` characters pair off as `$$` (the PID parameter), so only an ODD run's last `$` is the opener; a `$` escaped by a backslash is a
+// literal and starts no run (`\$$'..'` is a literal dollar, then an opener). Bash removes a backslash-newline (a line continuation)
+// BEFORE it tokenizes, so a `$`, a backslash-newline and `$'..'` read to it as `$$'..'`: the region of `$`, backslash, CR and newline
+// characters before `i` is read FORWARD, the way bash joins the line (counting raw characters backwards could not tell a continuation from
+// a real newline). In that region: a backslash-newline pair is skipped; a backslash before a `$` or a backslash is an escaped literal that
+// ends the run; a newline, or a CR then newline, ends it. A CR that is NOT directly before a newline, and a backslash directly before a CR,
+// are where MSYS bash (deletes every CR) and GNU bash (keeps it) part ways: that is the dialect error tokenize() pushes for the whole input
+// (CG-14, which absorbed the CG-13 special case that stood here), so this predicate does not decide it. ONE predicate for the word scanner
+// and the heredoc delimiter reader, so the two cannot drift. CITED SOURCE: bash 5.x RAN (scratchpad/16f/b3-*.out, b4-before.out,
+// b4-after.out; the reviewer's rv-re2b / rv-re3a / rv-re3b brute force).
 function dollarOpensQuote(input, i) {
   let start = i;
   while (start > 0 && (input[start - 1] === '$' || input[start - 1] === '\\' || input[start - 1] === '\n' || input[start - 1] === '\r')) start--;
@@ -56,14 +53,14 @@ function dollarOpensQuote(input, i) {
   while (j < i) {
     const c = input[j];
     if (c === '\r') {
-      if (input[j + 1] !== '\n') return null; // a CR that is not a line end: MSYS deletes it, GNU keeps it
-      run = 0; // CR then newline: a line end in both dialects
-      j += 2;
+      // A CR that is not directly before a newline is the dialect error CG-14 pushes for the whole input (tokenize, end), so what this
+      // predicate answers for it does not matter; a CR then newline is a line end in both dialects and ends the run.
+      run = 0;
+      j += input[j + 1] === '\n' ? 2 : 1;
       continue;
     }
     if (c === '\\') {
       if (input[j + 1] === '\n') { j += 2; continue; }
-      if (input[j + 1] === '\r') return null; // backslash-CR: MSYS joins the line, GNU escapes the CR
       if (j + 1 === i) return false; // the backslash escapes the `$` at i itself: a literal, no opener
       run = 0; // an escaped `$` or an escaped backslash is a literal and ends the run
       j += 2;
@@ -156,9 +153,12 @@ export function tokenize(input) {
   // order the operators appeared, and the rest of the operator line is
   // ordinary shell (RUN, bash 5.3.15, scratchpad/16f/heredoc-probe.out).
   const pendingHeredocs = [];
+  // CG-14 (17c): the [start, end) index range of every heredoc body read, so the CR rule below can leave body text alone.
+  const bodyRanges = [];
   function readHeredocBodies() {
     for (const h of pendingHeredocs) {
       let terminated = false;
+      const bodyStart = i;
       while (i < n) {
         const lineEndIdx = input.indexOf('\n', i);
         const lineEnd = lineEndIdx === -1 ? n : lineEndIdx;
@@ -166,7 +166,11 @@ export function tokenize(input) {
         const compareLine = h.stripTabs ? line.replace(/^\t+/, '') : line;
         i = lineEndIdx === -1 ? n : lineEndIdx + 1;
         if (compareLine === h.delim) { terminated = true; break; }
+        // CG-14: a line that matches the delimiter only once a trailing CR is ignored ends the body on MSYS (it deletes the CR) and does
+        // not on GNU, so the two dialects disagree on where the body stops: a tokenizer error, never a verdict.
+        if (compareLine.replace(/\r$/, '') === h.delim.replace(/\r$/, '')) errors.push(CR_ERROR);
       }
+      bodyRanges.push([bodyStart, i]);
       if (!terminated) errors.push('unterminated heredoc');
     }
     pendingHeredocs.length = 0;
@@ -363,16 +367,14 @@ export function tokenize(input) {
           }
           // `$'..'` is ANSI-C quoting (decoded like the word scanner does) and `$".."` is a double-quoted run whose `$` is dropped:
           // bash quote removal on the delimiter word (16f bounce M1; an unquoted `$EOF` stays the literal `$EOF`).
-          const dq = ch === '$' && (input[i + 1] === "'" || input[i + 1] === '"') ? dollarOpensQuote(input, i) : false;
-          if (dq === null) { errors.push(DOLLAR_CR_ERROR); i = n; break; }
-          if (dq && input[i + 1] === "'") {
+          if (ch === '$' && input[i + 1] === "'" && dollarOpensQuote(input, i)) {
             const ansi = readAnsiC(input, i + 2);
             delim += ansi.value;
             i = ansi.next;
             if (!ansi.closed) errors.push('unterminated ANSI-C quote');
             continue;
           }
-          if (dq) { i++; continue; }
+          if (ch === '$' && input[i + 1] === '"' && dollarOpensQuote(input, i)) { i++; continue; }
           if (ch === '"' || ch === "'") { quoteChar = ch; i++; continue; }
           if (ch === '\\' && i + 1 < n && input[i + 1] !== '\n') { delim += input[i + 1]; i += 2; continue; }
           if (' \t\n;&|()<>'.includes(ch)) break;
@@ -431,9 +433,7 @@ export function tokenize(input) {
       // stated: `\uHHHH`/`\UHHHHHHHH` unicode escapes are NOT decoded -
       // this parser's verb tables are ASCII strings by construction, so
       // a unicode-escaped spelling could never match one regardless.
-      const dq = ch === '$' && (input[i + 1] === "'" || input[i + 1] === '"') ? dollarOpensQuote(input, i) : false;
-      if (dq === null) { errors.push(DOLLAR_CR_ERROR); i = n; brokeOnError = true; break; }
-      if (dq && input[i + 1] === "'") {
+      if (ch === '$' && input[i + 1] === "'" && dollarOpensQuote(input, i)) {
         sawQuote = true;
         const ansi = readAnsiC(input, i + 2);
         value += ansi.value;
@@ -446,7 +446,7 @@ export function tokenize(input) {
       // is consumed without joining the value and the plain double-
       // quote branch below takes over unchanged (its own escaping rules
       // already apply - this is NOT ANSI-C quoting).
-      if (dq) { i++; continue; }
+      if (ch === '$' && input[i + 1] === '"' && dollarOpensQuote(input, i)) { i++; continue; }
       if (ch === '\\' && !isWindowsDrivePath && /^[A-Za-z]:$/.test(input.slice(i - 2, i))) {
         isWindowsDrivePath = true;
       }
@@ -525,6 +525,21 @@ export function tokenize(input) {
   }
 
   if (pendingHeredocs.length > 0) errors.push('unterminated heredoc');
+  // CG-14 (17c, 9a-F9 widened; the CG-13 rule for every word): MSYS bash deletes every CR before it tokenizes and GNU bash keeps it as an
+  // ordinary character, so a CR inside or beside a word hides a verb on one of them (`r<CR>m`, `rm<CR>`, a CR after `;`, in a quoted
+  // verb, after a backslash-quote). A CR outside a heredoc body that is not directly before a newline, and a backslash directly before a
+  // CR (MSYS joins the line), is the dialect error: unjudged, never a verdict. A CR directly before a newline is the line end on MSYS and
+  // the last character of the word on GNU: the word keeps it, and a target ending in it is reported twice by parseCommand.
+  // CITED SOURCE: RAN on MSYS bash 5.3.15 (scratchpad/16f/rv-re4a.out, rv-re4b.out); GNU bash READ (bash manual 3.1.2.1) and RUN by the
+  // GNU leg of parser.test.mjs Groups 117 and 118 wherever CI offers a GNU bash.
+  let crPos = input.indexOf('\r');
+  let bodyIdx = 0;
+  while (crPos !== -1) {
+    while (bodyIdx < bodyRanges.length && bodyRanges[bodyIdx][1] <= crPos) bodyIdx++;
+    const inBody = bodyIdx < bodyRanges.length && crPos >= bodyRanges[bodyIdx][0];
+    if (!inBody && (input[crPos + 1] !== '\n' || input[crPos - 1] === '\\')) { errors.push(CR_ERROR); break; }
+    crPos = input.indexOf('\r', crPos + 1);
+  }
   return { tokens, errors };
 }
 

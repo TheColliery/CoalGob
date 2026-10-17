@@ -4350,7 +4350,7 @@ test("a heredoc body keeps its CRs, but a terminator line the two dialects read 
 
 // GNU leg for CG-14: what GNU bash does with the H6 witnesses, found by CAPABILITY (a CR kept in a variable), a visible skip on MSYS.
 // Same fixture rails as Group 117's leg (temp root under os.tmpdir() asserted, no GIT_*, a killing timeout, a narrow registered teardown).
-test('GNU bash keeps the CR, so a witness runs the rm only where the parser says something (Group 118, GNU leg)', (t) => {
+test('GNU bash keeps the CR: no witness it runs is NO_MATCH, and rm -rf build<CR><NL> removes build<CR> and leaves build, both named by the parser (Group 118, GNU leg)', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg18-gnu-'));
   t.after(() => {
     if (fs.realpathSync.native(dir).startsWith(fs.realpathSync.native(os.tmpdir()) + path.sep)) fs.rmSync(dir, { recursive: true, force: true });
@@ -4362,7 +4362,9 @@ test('GNU bash keeps the CR, so a witness runs the rm only where the parser says
     t.skip('this bash does not keep a CR as a character (printed ' + JSON.stringify(p.error ? String(p.error.code) : (p.stdout || '').trim()) + ', GNU bash prints 3): MSYS/Cygwin bash deletes it');
     return;
   }
-  const rows = [...H6_WITNESSES, BSC('rm -rf build<CR><NL>'), BSC('r<BS><CR><NL>m -rf build')];
+  // Rows GNU does not run an rm for (it keeps or escapes the CR, so the verb is not rm): the guard below stays as the safety net, and a
+  // row where GNU DID remove the directory must not read NO_MATCH. Honest limit: on GNU none of these rows reaches rm, so the guard is idle.
+  const rows = [...H6_WITNESSES, BSC('r<BS><CR><NL>m -rf build')];
   for (const [k, cmd] of rows.entries()) {
     fs.rmSync(path.join(dir, 'build'), { recursive: true, force: true });
     fs.mkdirSync(path.join(dir, 'build'));
@@ -4371,10 +4373,20 @@ test('GNU bash keeps the CR, so a witness runs the rm only where the parser says
     const ran = !fs.existsSync(path.join(dir, 'build'));
     if (ran) assert.notEqual(verdictOf(cmd), 'NO_MATCH', 'GNU bash ran the rm: ' + JSON.stringify(cmd));
   }
-  // On GNU the CRLF target is `build<CR>`, not `build`: the directory survives and the parser names both readings.
+  // The positive row GNU DOES run (L2): the CRLF target is `build<CR>` to GNU, so against a fixture holding BOTH directories GNU removes
+  // the one named with the CR and leaves `build`. A CR in a directory name is legal on POSIX, and the fixture lives only in this folder.
+  const crName = 'build\r';
   fs.rmSync(path.join(dir, 'build'), { recursive: true, force: true });
   fs.mkdirSync(path.join(dir, 'build'));
-  fs.writeFileSync(path.join(dir, 'crlf.sh'), BSC('rm -rf build<CR><NL>'));
+  fs.mkdirSync(path.join(dir, crName));
+  const crlf = BSC('rm -rf build<CR><NL>');
+  fs.writeFileSync(path.join(dir, 'crlf.sh'), crlf);
   bashRun(path.join(dir, 'crlf.sh'), dir);
-  assert.equal(fs.existsSync(path.join(dir, 'build')), true, 'GNU removed build<CR>, not build');
+  assert.equal(fs.existsSync(path.join(dir, crName)), false, 'GNU ran the rm: build<CR> is gone');
+  assert.equal(fs.existsSync(path.join(dir, 'build')), true, 'GNU left build standing');
+  // The parser names the directory GNU removed (build<CR>) beside the MSYS reading (build): never NO_MATCH where GNU ran an rm.
+  const r = parseCommand(crlf);
+  assert.equal(r.verdict, 'DESTRUCTION');
+  assert.ok(r.findings.some((x) => x.target === crName), 'the parser names build<CR>');
+  assert.ok(r.findings.some((x) => x.target === 'build'), 'the parser names build');
 });

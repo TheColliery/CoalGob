@@ -9,6 +9,7 @@ All notable changes to CoalGob are documented here. Format follows [Keep a Chang
 - Test only, no shipped behaviour change: the carriage-return test for a bash that keeps the character (GNU bash) in `scripts/lib/parser.test.mjs` is renamed to what it checks and gains a positive row, `rm -rf build<CR><NL>` run against a fixture folder holding both `build` and `build<CR>`, asserting that `build<CR>` is removed, `build` stays, and the parser names both targets.
 - Test and CI only, no shipped behaviour change: four files re-copied by blob from `TheColliery/.github` at `2c0ab1b`: `scripts/front-door-links.test.mjs` (`9e75ccae`), `.github/workflows/front-door-links.yml` (`d9764084`, the `front-door-links` workflow), `scripts/lib/git-env-census.mjs` (`89f4c63f`) and `scripts/lib/git-env-census.vectors.mjs` (`e1d010f7`).
 - Test only, no shipped behaviour change: `scripts/front-door-links.test.mjs` re-copied again by blob from `TheColliery/.github` at `b9832a0`, from `9e75ccae` to `c051b28f`, so it supersedes the blob named in the line above.
+- Test only, no shipped behaviour change: `scripts/front-door-links.test.mjs` re-copied once more by blob from `TheColliery/.github` at `061076d`, from `c051b28f` to `ed9fbae9`, so it supersedes the blob named in the line above.
 
 ## [0.1.0-beta.4] - 2026-10-17
 

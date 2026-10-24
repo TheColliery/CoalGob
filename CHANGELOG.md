@@ -10,6 +10,8 @@ All notable changes to CoalGob are documented here. Format follows [Keep a Chang
 - Test and CI only, no shipped behaviour change: four files re-copied by blob from `TheColliery/.github` at `2c0ab1b`: `scripts/front-door-links.test.mjs` (`9e75ccae`), `.github/workflows/front-door-links.yml` (`d9764084`, the `front-door-links` workflow), `scripts/lib/git-env-census.mjs` (`89f4c63f`) and `scripts/lib/git-env-census.vectors.mjs` (`e1d010f7`).
 - Test only, no shipped behaviour change: `scripts/front-door-links.test.mjs` re-copied again by blob from `TheColliery/.github` at `b9832a0`, from `9e75ccae` to `c051b28f`, so it supersedes the blob named in the line above.
 - Test only, no shipped behaviour change: `scripts/front-door-links.test.mjs` re-copied once more by blob from `TheColliery/.github` at `061076d`, from `c051b28f` to `ed9fbae9`, so it supersedes the blob named in the line above.
+- Test and CI only, no shipped behaviour change: `scripts/lib/wave-run.mjs` (`cd190654`, a folder named `..x` is no longer read as outside the root) and `scripts/lib/wave-run.test.mjs` (`405bd59c`) re-copied, and `.coderabbit.yaml` (`6f53bd2c`) added, by blob from `TheColliery/.github` at `26af68f`.
+- Docs only: `SECURITY.md` no longer says no release tag exists; `v0.1.0-beta.1` through `v0.1.0-beta.4` do.
 
 ## [0.1.0-beta.4] - 2026-10-17
 

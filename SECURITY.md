@@ -8,7 +8,7 @@ Report a security issue in this repo through GitHub's private vulnerability repo
 
 ## Commit & Tag Signatures
 
-Release tags and maintainer commits made from the public launch onward are SSH-signed (`gpg.format=ssh`); GitHub shows the Verified badge on them. The 90 commits that predate the public repository are unsigned. Automated Dependabot / CI commits are unsigned by design (they carry no maintainer key), so verify a signed release tag — the artifact a release consumer trusts. No release tag exists yet; once the first one is cut:
+Release tags and maintainer commits made from the public launch onward are SSH-signed (`gpg.format=ssh`); GitHub shows the Verified badge on them. The 90 commits that predate the public repository are unsigned. Automated Dependabot / CI commits are unsigned by design (they carry no maintainer key), so verify a signed release tag — the artifact a release consumer trusts. Release tags exist, `v0.1.0-beta.1` through `v0.1.0-beta.4`; to verify the latest:
 
 ```bash
 echo "* ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEtqTWGKhX1Dk9nZP8ns13Wl5zsO1Cz3VlTS6m1p2fP9" > coalgob_signers

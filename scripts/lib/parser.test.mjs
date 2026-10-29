@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCommand } from './parser.mjs';
+import { parseCommand, _workCountForTests, _resetWorkCountForTests } from './parser.mjs';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -4395,6 +4395,18 @@ test('GNU bash keeps the CR: no witness it runs is NO_MATCH, and rm -rf build<CR
 // command line it reads. Test names describe the behaviour only.
 
 test('bounds the mv destination set to the command length, admitting the excess as unjudged', () => {
+  // A realistic batch stays exact: 30 sources of five or six characters into a 65-character directory.
+  const realisticDirectory = ('C:/Users/someone/source/repos/project/archive/2026-10/').padEnd(65, 'x');
+  const realisticSources = Array.from({ length: 30 }, (_, i) => 'a' + i + '.js');
+  const realistic = [
+    ['mv', '-t', realisticDirectory, ...realisticSources].join(' '),
+    ['mv', ...realisticSources, realisticDirectory].join(' '),
+  ];
+  for (const cmd of realistic) {
+    const r = parseCommand(cmd);
+    assert.equal(r.verdict, 'DESTRUCTION', 'a realistic batch keeps its exact verdict: ' + cmd.slice(0, 12));
+    assert.equal(r.findings.length, 30, 'and one target per source');
+  }
   const directory = 'd'.repeat(2000);
   const sources = Array.from({ length: 50 }, (_, i) => 's' + i);
   const forms = [
@@ -4408,25 +4420,21 @@ test('bounds the mv destination set to the command length, admitting the excess 
   assert.equal(verdictOf('mv -t /tmp a b'), 'DESTRUCTION', 'a short destination set keeps its verdict');
 });
 
-// Median of `count` timed runs, so one slow run cannot decide the ratio.
-function medianMs(run, count) {
-  const samples = [];
-  for (let i = 0; i < count; i++) {
-    const t0 = performance.now();
-    run();
-    samples.push(performance.now() - t0);
-  }
-  samples.sort((a, b) => a - b);
-  return samples[Math.floor(count / 2)];
-}
+// Fixed allowance, in words, for the work around the secondary walk. It keeps the bound a count
+// of copied words, never a clock, and is far below the quadratic totals this test exists to catch.
+const SECONDARY_WALK_SLACK_WORDS = 1000;
 
-test('parses a long run of unrecognised words in time linear in its length', () => {
+test('parses a long run of unrecognised words with secondary-walk work linear in its length', () => {
   const runOf = (n) => 'sudo frob ' + Array.from({ length: n }, () => 'x').join(' ');
-  const small = runOf(8000);
-  const large = runOf(16000);
-  assert.equal(verdictOf(small), 'NO_MATCH', 'the run is not a destroyer');
-  parseCommand(small);
-  parseCommand(large);
-  const ratio = medianMs(() => parseCommand(large), 5) / medianMs(() => parseCommand(small), 5);
-  assert.ok(ratio < 3, `doubling the run must not quadruple the time (ratio ${ratio.toFixed(2)})`);
+  const copiedWords = (n) => {
+    _resetWorkCountForTests();
+    assert.equal(verdictOf(runOf(n)), 'NO_MATCH', 'the run is not a destroyer');
+    return _workCountForTests('secondaryWords');
+  };
+  const small = copiedWords(8000);
+  const large = copiedWords(16000);
+  assert.ok(
+    large <= 2 * small + SECONDARY_WALK_SLACK_WORDS,
+    `doubling the run may at most double the words copied (small ${small}, large ${large})`,
+  );
 });

@@ -889,6 +889,13 @@ function mvSuffixSkipIdx(args) {
 // multiple of the input.
 const MV_DESTINATION_BUDGET_FACTOR = 8;
 
+// Floor on that budget, in destination characters (29a bounce 1, the head's
+// ruling). 64 KiB of destination text costs nothing to build, and it keeps
+// realistic batches exact (hundreds of files into a long absolute path). Above
+// the floor the bound stays linear: the output is at most the floor plus the
+// factor times the input.
+const MV_DESTINATION_BUDGET_FLOOR = 65536;
+
 // Characters the destination join would produce for these sources, summed
 // without building any joined string (only each basename's length is read).
 function mvDestinationChars(directory, sources) {
@@ -900,7 +907,7 @@ function mvDestinationChars(directory, sources) {
 function mvDestinationBudget(args) {
   let inputChars = 0;
   for (const w of args) inputChars += w.value.length;
-  return MV_DESTINATION_BUDGET_FACTOR * inputChars;
+  return Math.max(MV_DESTINATION_BUDGET_FACTOR * inputChars, MV_DESTINATION_BUDGET_FLOOR);
 }
 
 // ponytail: 62 lines at declaration (defence round 7, grown by W2's
@@ -1753,6 +1760,11 @@ function isSecondaryCandidateNamedVerb(words, idx) {
 // primary result already proves heredoc/fdOutOfScope were both falsy
 // for this segment; re-checking them for a secondary candidate can
 // never newly fire.
+// Test hook (29a bounce 1): words copied by the secondary walk, read by the tests only through the two exports below.
+const work = { secondaryWords: 0 };
+export function _workCountForTests(kind) { return work[kind]; }
+export function _resetWorkCountForTests() { work.secondaryWords = 0; }
+
 function secondaryCandidateVerdict(words, idx, heredoc, fdOutOfScope, precededByPipe) {
   if (isSecondaryCandidateNamedVerb(words, idx)) {
     return { verdict: 'OUT_OF_SCOPE', reason: 'a listed verb may be present past an unresolved prefix chain', kind: KIND_UNJUDGED };
@@ -1766,6 +1778,7 @@ function secondaryCandidateVerdict(words, idx, heredoc, fdOutOfScope, precededBy
   if (!heredoc && !fdOutOfScope && !VERBS_CLASSIFY_VERB_ADMITS.has(baseLower) && !SCRIPT_EXTENSION.test(base)) {
     return null;
   }
+  work.secondaryWords += words.length - idx - 1;
   const args = words.slice(idx + 1);
   const result = classifyVerb(base, baseLower, args, heredoc, fdOutOfScope, precededByPipe);
   return result.verdict === 'OUT_OF_SCOPE' ? result : null;

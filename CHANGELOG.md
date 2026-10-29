@@ -6,7 +6,7 @@ All notable changes to CoalGob are documented here. Format follows [Keep a Chang
 
 ### Changed
 
-- The command classifier's work is now bounded by the length of the command it reads. An `mv` whose destination set would expand past eight times its own operand length returns `OUT_OF_SCOPE` with `kind: unjudged` instead of one `DESTRUCTION` per source, and a long run of unrecognised words after a prefix is read in time linear in its length; every other verdict is unchanged (`scripts/lib/parser.test.mjs`: `bounds the mv destination set to the command length, admitting the excess as unjudged` and `parses a long run of unrecognised words in time linear in its length`).
+- The command classifier's work is now bounded by the length of the command it reads. An `mv` whose destination set would expand past the larger of eight times its own operand length and 65,536 characters returns `OUT_OF_SCOPE` with `kind: unjudged` instead of one `DESTRUCTION` per source, and a long run of unrecognised words after a prefix is read with work linear in its length; every other verdict is unchanged (`scripts/lib/parser.test.mjs`: `bounds the mv destination set to the command length, admitting the excess as unjudged` and `parses a long run of unrecognised words with secondary-walk work linear in its length`).
 
 ## [0.1.0-beta.4] - 2026-10-17
 

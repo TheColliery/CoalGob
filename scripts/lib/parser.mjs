@@ -878,6 +878,31 @@ function mvSuffixSkipIdx(args) {
   return -1;
 }
 
+// Work bound for mv's destination join (29a). Each finding's target is
+// posix.join(dir, basename(source)), so one long directory repeated over many
+// sources expands to sources * dirLength characters. The budget is the
+// command's own operand length times this factor: a realistic `mv -t DIR a b`
+// sits far inside it, and a destination set past it is admitted as unjudged
+// rather than expanded. Eight, because the operands already carry the
+// directory and each source once, so eight times that covers a handful of
+// sources under one directory and still caps the expansion at a fixed
+// multiple of the input.
+const MV_DESTINATION_BUDGET_FACTOR = 8;
+
+// Characters the destination join would produce for these sources, summed
+// without building any joined string (only each basename's length is read).
+function mvDestinationChars(directory, sources) {
+  let total = 0;
+  for (const source of sources) total += directory.length + posix.basename(source).length + 1;
+  return total;
+}
+
+function mvDestinationBudget(args) {
+  let inputChars = 0;
+  for (const w of args) inputChars += w.value.length;
+  return MV_DESTINATION_BUDGET_FACTOR * inputChars;
+}
+
 // ponytail: 62 lines at declaration (defence round 7, grown by W2's
 // target-directory recognition + --backup exemption) - over the 50-line
 // function-length signal. The target-directory branch and the backup
@@ -928,6 +953,9 @@ function analyzeMv(args, inlineVersionControl) {
     if (positional.length === 0 || targetDirectory.dir === undefined) {
       return { verdict: 'OUT_OF_SCOPE', reason: 'mv argument shape not recognized', kind: KIND_UNJUDGED };
     }
+    if (mvDestinationChars(targetDirectory.dir, positional) > mvDestinationBudget(args)) {
+      return { verdict: 'OUT_OF_SCOPE', reason: 'mv destination set exceeds the command length budget', kind: KIND_UNJUDGED };
+    }
     // Every SOURCE moves into DIRECTORY (pure string join, no filesystem
     // access - ruling 3 holds) - not the directory itself, which must
     // already exist for the command to run at all and so would always
@@ -969,6 +997,9 @@ function analyzeMv(args, inlineVersionControl) {
     // do not re-raise without a THIRD site forcing the question.
     const directory = positional[positional.length - 1];
     const sources = positional.slice(0, -1);
+    if (mvDestinationChars(directory, sources) > mvDestinationBudget(args)) {
+      return { verdict: 'OUT_OF_SCOPE', reason: 'mv destination set exceeds the command length budget', kind: KIND_UNJUDGED };
+    }
     return {
       verdict: 'DESTRUCTION',
       findings: sources.map((source) => ({
@@ -1676,6 +1707,17 @@ function verbAt(words, idx) {
   return { base, baseLower: VERB_ALIASES[stripped] || stripped };
 }
 
+// Every verb name classifyVerb's branches key on (29a). A verb outside this set,
+// with no heredoc and no fd redirect, and no script extension, reaches the
+// final `return { verdict: 'NO_MATCH' }` of classifyVerb whatever its arguments
+// are. A superset is still exact: it only means some verbs are checked that
+// need not be.
+const VERBS_CLASSIFY_VERB_ADMITS = new Set([
+  ...DESTRUCTION_VERBS, 'mv', 'move-item', ...NAMED_DESTROYER_VERBS, 'case', 'cp', 'tee',
+  'clear-content', 'set-content', 'make', 'xargs', 'find', 'git', 'npx', 'cmd',
+  ...PKG_MANAGERS, ...POSIX_INTERPRETER_VERBS, ...WINDOWS_ONE_LINER_VERBS, ...WRAPPER_SCRIPT_VERBS,
+]);
+
 // Name-only check for a SECONDARY candidate, KEPT UNCHANGED (defence
 // round 10 tried replacing this outright with a classifyVerb-based
 // check and it regressed a room ruling - see secondaryCandidateVerdict's
@@ -1716,6 +1758,14 @@ function secondaryCandidateVerdict(words, idx, heredoc, fdOutOfScope, precededBy
     return { verdict: 'OUT_OF_SCOPE', reason: 'a listed verb may be present past an unresolved prefix chain', kind: KIND_UNJUDGED };
   }
   const { base, baseLower } = verbAt(words, idx);
+  // Skip the copy of the rest of the words and the call for a candidate that
+  // cannot come back OUT_OF_SCOPE (29a). With no heredoc and no fd redirect,
+  // classifyVerb's only OUT_OF_SCOPE admissions key on the verb's own name or
+  // script extension; its argument reads sit inside those same branches. Every
+  // other verb falls through to NO_MATCH whatever its arguments are.
+  if (!heredoc && !fdOutOfScope && !VERBS_CLASSIFY_VERB_ADMITS.has(baseLower) && !SCRIPT_EXTENSION.test(base)) {
+    return null;
+  }
   const args = words.slice(idx + 1);
   const result = classifyVerb(base, baseLower, args, heredoc, fdOutOfScope, precededByPipe);
   return result.verdict === 'OUT_OF_SCOPE' ? result : null;

@@ -4390,3 +4390,43 @@ test('GNU bash keeps the CR: no witness it runs is NO_MATCH, and rm -rf build<CR
   assert.ok(r.findings.some((x) => x.target === crName), 'the parser names build<CR>');
   assert.ok(r.findings.some((x) => x.target === 'build'), 'the parser names build');
 });
+
+// 29a. The parser's work and output stay proportional to the length of the
+// command line it reads. Test names describe the behaviour only.
+
+test('bounds the mv destination set to the command length, admitting the excess as unjudged', () => {
+  const directory = 'd'.repeat(2000);
+  const sources = Array.from({ length: 50 }, (_, i) => 's' + i);
+  const forms = [
+    ['mv', '-t', directory, ...sources].join(' '),
+    ['mv', ...sources, directory].join(' '),
+  ];
+  for (const cmd of forms) {
+    assert.equal(verdictOf(cmd), 'OUT_OF_SCOPE', 'an expansion past the budget is admitted: ' + cmd.slice(0, 12));
+    assert.equal(kindOf(cmd), 'unjudged', 'the admission is counted as unjudged, never silent');
+  }
+  assert.equal(verdictOf('mv -t /tmp a b'), 'DESTRUCTION', 'a short destination set keeps its verdict');
+});
+
+// Median of `count` timed runs, so one slow run cannot decide the ratio.
+function medianMs(run, count) {
+  const samples = [];
+  for (let i = 0; i < count; i++) {
+    const t0 = performance.now();
+    run();
+    samples.push(performance.now() - t0);
+  }
+  samples.sort((a, b) => a - b);
+  return samples[Math.floor(count / 2)];
+}
+
+test('parses a long run of unrecognised words in time linear in its length', () => {
+  const runOf = (n) => 'sudo frob ' + Array.from({ length: n }, () => 'x').join(' ');
+  const small = runOf(8000);
+  const large = runOf(16000);
+  assert.equal(verdictOf(small), 'NO_MATCH', 'the run is not a destroyer');
+  parseCommand(small);
+  parseCommand(large);
+  const ratio = medianMs(() => parseCommand(large), 5) / medianMs(() => parseCommand(small), 5);
+  assert.ok(ratio < 3, `doubling the run must not quadruple the time (ratio ${ratio.toFixed(2)})`);
+});

@@ -73,23 +73,15 @@ parseCommand('make clean');   // { verdict: 'OUT_OF_SCOPE', findings: [{ kind: '
 
 ### Output reference
 
-`parseCommand(input)` returns `{ verdict, findings }`. `verdict` is one of `DESTRUCTION`, `OUT_OF_SCOPE` or
-`NO_MATCH`. When a command yields both destructions and out-of-scope segments, `DESTRUCTION` is returned and only
-its destruction entries are listed.
-
-| `verdict` | `findings` | When |
-|---|---|---|
-| `DESTRUCTION` | one or more destruction entries | At least one target the engine routes. |
-| `OUT_OF_SCOPE` | one or more out-of-scope entries | Nothing routed, but something could destroy and is not judged. |
-| `NO_MATCH` | always `[]` | The closed verb list did not match. **Not a safety claim.** |
+`parseCommand(input)` returns `{ verdict, findings }`, the verdict being one of the three in the table above. `findings` holds destruction entries for `DESTRUCTION`, out-of-scope entries for `OUT_OF_SCOPE`, and is always `[]` for `NO_MATCH`. When a command yields both destructions and out-of-scope segments, `DESTRUCTION` is returned and only its destruction entries are listed.
 
 Destruction entries. Each carries `verdict: 'DESTRUCTION'` and `conditional`, plus exactly one of `verb` or `operator`.
 
 | Field | Type | When present | Meaning |
 |---|---|---|---|
-| `verb` | string | a command destruction | Lowercase command name after alias mapping, such as `rm`, `mv`, `remove-item`, `del`, `rmdir`, `unlink`, `truncate`. |
-| `operator` | string | a redirect destruction | The shell redirect operator as written, such as `>`, `1>`, `>|`, `&>`. Never a command name. |
-| `target` | string | every entry except a piped `remove-item` | The path the command removes, overwrites or truncates. For `mv` it is the destination path the move would create. |
+| `verb` | string | a command destruction | Lowercase command name after alias mapping: `rm`, `rmdir`, `unlink`, `truncate`, `del`, `remove-item`, `mv` or `move-item`. |
+| `operator` | string | a redirect destruction | The truncating redirect as the tokenizer normalises it: `>` is reported as `1>`, `>|` as `1>|`, and `>&` as `&>`. Never a command name. |
+| `target` | string | every entry except a piped `remove-item` | The path the command removes, overwrites or truncates. For `mv` and `move-item` with two operands it is the second operand as written; for several sources it is each destination path inside the target directory. |
 | `conditional` | boolean | every entry | `true` when the destruction depends on a runtime fact (for example, an `mv` over an existing target), so the caller must check that fact itself. `false` when the verb destroys unconditionally. |
 
 A target that ends in a carriage return yields two entries, one with the carriage return and one without it, so

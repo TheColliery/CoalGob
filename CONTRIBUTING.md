@@ -70,4 +70,4 @@ Bump version in `.claude-plugin/plugin.json` → add a CHANGELOG entry → ensur
 
 Contributions are licensed under this repo's own outbound license — see [LICENSE](LICENSE). No separate CLA: sending a PR licenses it the way the project already ships. Please assume good faith and be respectful, per [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Report security issues per [SECURITY.md](SECURITY.md).
 
-**Response time:** best effort by a solo maintainer; no SLA is promised. When a target window is set it is stated here.
+**Response time:** best effort by a solo maintainer for issues and pull requests; no SLA is promised for them. Security reports have their own windows, stated in [SECURITY.md](SECURITY.md#reporting-a-vulnerability).

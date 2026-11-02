@@ -80,7 +80,7 @@ Destruction entries. Each carries `verdict: 'DESTRUCTION'` and `conditional`, pl
 | Field | Type | When present | Meaning |
 |---|---|---|---|
 | `verb` | string | a command destruction | Lowercase command name after alias mapping: `rm`, `rmdir`, `unlink`, `truncate`, `del`, `remove-item`, `mv` or `move-item`. |
-| `operator` | string | a redirect destruction | The truncating redirect as the tokenizer normalises it: `>` is reported as `1>`, `>|` as `1>|`, and `>&` as `&>`. Never a command name. |
+| `operator` | string | a redirect destruction | The truncating redirect as the tokenizer normalises it: `>` is reported as `1>`, `>\|` as `1>\|`, and `>&` as `&>`. Never a command name. |
 | `target` | string | every entry except a piped `remove-item` | The path the command removes, overwrites or truncates. For `mv` and `move-item` with two operands it is the second operand as written; for several sources it is each destination path inside the target directory. |
 | `conditional` | boolean | every entry | `true` when the destruction depends on a runtime fact (for example, an `mv` over an existing target), so the caller must check that fact itself. `false` when the verb destroys unconditionally. |
 

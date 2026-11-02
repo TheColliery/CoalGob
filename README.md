@@ -12,6 +12,7 @@ agent, so nothing installs, blocks, or reroutes anything today.
 ![license](https://img.shields.io/badge/license-Apache_2.0-blue)
 ![status](https://img.shields.io/badge/status-beta-orange)
 ![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/TheColliery/CoalGob?utm_source=oss&utm_medium=github&utm_campaign=TheColliery%2FCoalGob&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16191/badge)](https://www.bestpractices.dev/projects/16191)
 
 **Part of [TheColliery](https://github.com/TheColliery)** — siblings: **[CoalMine](https://github.com/TheColliery/CoalMine)** (quality canaries) · **[CoalTipple](https://github.com/TheColliery/CoalTipple)** (model/effort routing) · **[CoalBoard](https://github.com/TheColliery/CoalBoard)** (consensus & debate) · **[CoalHearth](https://github.com/TheColliery/CoalHearth)** (session warm-resume) · **[CoalFace](https://github.com/TheColliery/CoalFace)** (fan-out discipline) · **[CoalWash](https://github.com/TheColliery/CoalWash)** (memory defrag) · **[CoalLedger](https://github.com/TheColliery/CoalLedger)** (docs health).
 
@@ -69,6 +70,44 @@ import { parseCommand } from './scripts/lib/parser.mjs';
 parseCommand('rm -rf build'); // { verdict: 'DESTRUCTION', findings: [{ verb: 'rm', target: 'build', … }] }
 parseCommand('make clean');   // { verdict: 'OUT_OF_SCOPE', findings: [{ kind: 'declared', … }] }
 ```
+
+### Output reference
+
+`parseCommand(input)` returns `{ verdict, findings }`. `verdict` is one of `DESTRUCTION`, `OUT_OF_SCOPE` or
+`NO_MATCH`. When a command yields both destructions and out-of-scope segments, `DESTRUCTION` is returned and only
+its destruction entries are listed.
+
+| `verdict` | `findings` | When |
+|---|---|---|
+| `DESTRUCTION` | one or more destruction entries | At least one target the engine routes. |
+| `OUT_OF_SCOPE` | one or more out-of-scope entries | Nothing routed, but something could destroy and is not judged. |
+| `NO_MATCH` | always `[]` | The closed verb list did not match. **Not a safety claim.** |
+
+Destruction entries. Each carries `verdict: 'DESTRUCTION'` and `conditional`, plus exactly one of `verb` or `operator`.
+
+| Field | Type | When present | Meaning |
+|---|---|---|---|
+| `verb` | string | a command destruction | Lowercase command name after alias mapping, such as `rm`, `mv`, `remove-item`, `del`, `rmdir`, `unlink`, `truncate`. |
+| `operator` | string | a redirect destruction | The shell redirect operator as written, such as `>`, `1>`, `>|`, `&>`. Never a command name. |
+| `target` | string | every entry except a piped `remove-item` | The path the command removes, overwrites or truncates. For `mv` it is the destination path the move would create. |
+| `conditional` | boolean | every entry | `true` when the destruction depends on a runtime fact (for example, an `mv` over an existing target), so the caller must check that fact itself. `false` when the verb destroys unconditionally. |
+
+A target that ends in a carriage return yields two entries, one with the carriage return and one without it, so
+each shell that reads the line finds the path it removes. A `remove-item` that receives its input from a pipe has
+no `target`, because the path exists only upstream of the pipe.
+
+Out-of-scope entries. Each carries `verdict: 'OUT_OF_SCOPE'`, a `reason` string and a `kind`.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `reason` | string | Text naming the construct, such as `make target may run arbitrary destructive rules`. |
+| `kind` | string | `declared`: a boundary the engine states it does not judge, such as wrappers (`make`, `xargs`, `find`, `npm run`), interpreter one-liners and script files. `unrouted`: a named direct destroyer the engine knowingly does not route, such as `git clean`, `npx rimraf`, `tee`, `Clear-Content`. `unjudged`: a construct the engine could not read, such as a heredoc, an unjudged redirect, a subshell or command substitution at the start of a segment, an unrecognised `mv` or `Move-Item` shape, or an `mv` destination set over its length budget. |
+
+If the input cannot be tokenized, the result is `OUT_OF_SCOPE` with one entry per tokenizer error, each
+`{ reason, kind: 'unjudged' }`. Those entries carry no `verdict` key.
+
+A non-string input returns `{ verdict: 'OUT_OF_SCOPE', findings: [{ reason: 'non-string input' }] }`. That entry has
+no `kind`, because no shell was parsed.
 
 ## Compatibility
 

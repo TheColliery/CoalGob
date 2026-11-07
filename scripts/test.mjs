@@ -10,6 +10,7 @@
 //   the slowest file is scripts/secret-scan.test.mjs at 36.4 s wall (19.7 s on a quiet box, 08b), the next scripts/secret-gate.test.mjs at 34.0 s and scripts/lib/wave-run.test.mjs
 //   at 33.3 s; the slowest single TEST is 4.7 s (08b). So: 60 s per test is 12 times the slowest test; 180 s per FILE is five times the slowest file and ends a hang before the
 //   first test, which --test-timeout never reaches; 600 s for the whole run is more than four times the sum of every file when run one after another (about 125 s: 117 s for the files timed above plus the few seconds of this runner test).
+// On Node 22 --test-timeout is a per-FILE clock, not per test (nodejs/node PR #57672 landed in v24): the canon wave-run.test.mjs of c168392 outgrew 60 s as a file there (CI on 51c04ed), so the per-test clock is 150 s, still under the 180 s file clock.
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -34,7 +35,7 @@ const TEST_FILES = [
 ];
 
 const HEAP_MB = 2048;
-const TEST_TIMEOUT_MS = 60000;
+const TEST_TIMEOUT_MS = 150000;
 const FILE_CLOCK_MS = 180000;
 const DEADLINE_MS = 600000;
 

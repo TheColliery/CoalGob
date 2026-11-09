@@ -23,10 +23,13 @@ function tmp(t) {
 }
 
 // The same runner the room uses, serial so the fixture does not depend on the machine reading, with no heap flag of ours in the environment: the cap can only come from wave-run.
+// The child's environment is named keys only, the same shape as wave-run.test.mjs's sandboxEnv: the program's own path keys, and the folders of THIS test, never the operator's (hooks-safety.md 7).
+const BASE_ENV_KEYS = ['PATH', 'Path', 'SystemRoot', 'SYSTEMROOT', 'PATHEXT', 'ComSpec'];
 function waveRun(dir, files, extra = []) {
-  const env = { ...process.env };
-  delete env.NODE_OPTIONS;
-  delete env.NODE_TEST_CONTEXT;
+  const env = {
+    ...Object.fromEntries(BASE_ENV_KEYS.filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]])),
+    HOME: dir, USERPROFILE: dir, TEMP: dir, TMP: dir, TMPDIR: dir,
+  };
   return spawnSync(process.execPath, [WAVE_RUN, '--heap-mb', '2048', '--file-timeout-ms', '60000', '--deadline-ms', '120000', '--serial', ...extra, '--', ...files], { cwd: dir, encoding: 'utf8', timeout: 150000, killSignal: 'SIGKILL', env });
 }
 
@@ -109,4 +112,22 @@ test('test.mjs: a listed test file that does not exist fails loud and names the 
   const r = spawnSync(process.execPath, [path.join(scripts, 'test.mjs')], { cwd: dir, encoding: 'utf8', timeout: 60000, killSignal: 'SIGKILL' });
   assert.equal(r.status, 1);
   assert.match(r.stderr, /listed test file missing: .*parser\.test\.mjs/);
+});
+
+test('the wave-run child sees the test folder as HOME, USERPROFILE, TEMP, TMP and TMPDIR, never the operator\'s -- RED before 29dv (unit 1)', (t) => {
+  const dir = tmp(t);
+  fs.writeFileSync(path.join(dir, 'probe-env.test.mjs'), [
+    "import test from 'node:test';",
+    "import fs from 'node:fs';",
+    "test('records the environment it was given', () => {",
+    "  const keys = ['HOME', 'USERPROFILE', 'TEMP', 'TMP', 'TMPDIR'];",
+    "  fs.writeFileSync('env-probe.json', JSON.stringify(Object.fromEntries(keys.map((k) => [k, process.env[k]]))));",
+    '});',
+    '',
+  ].join('\n'));
+  const r = waveRun(dir, ['probe-env.test.mjs']);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const seen = JSON.parse(fs.readFileSync(path.join(dir, 'env-probe.json'), 'utf8'));
+  const want = fs.realpathSync.native(dir);
+  for (const k of ['HOME', 'USERPROFILE', 'TEMP', 'TMP', 'TMPDIR']) assert.equal(fs.realpathSync.native(seen[k]), want, `${k} = ${seen[k]}`);
 });

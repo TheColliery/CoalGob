@@ -10,13 +10,13 @@ import { scanGitSpawns, collectScriptsMjs, gitBlobId } from './lib/git-env-censu
 
 const ROOM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-// The one carrier the census flags, pinned with its reason: the spawn at :66 is its one finding, the spawn at :81 reads clean. It is a byte-equal copy of a house source, so the room cannot fix it room-side.
+// The one carrier the census flags, pinned with its reason: the spawn at :66 is its one finding; the spawn at :81 takes the same gitEnv() and is not counted, because the census reads only spawnSync and execFileSync. It is a byte-equal copy of a house source, so the room cannot fix it room-side.
 // (scripts/secret-scan.test.mjs was the second carrier until 09b: the source's new file, Bankfire bd328f2 a0319dcd, builds every child environment from named keys and reads clean with no pin.)
 const PINS = [
   {
     rel: 'scripts/secret-gate.mjs',
     blob: '175f0a52e7d2b48f2c6fce7d46e70739decb1a53',
-    why: 'canon secret gate (.github templates/published-code, 609d86b): keeps GIT_INDEX_FILE and GIT_CEILING_DIRECTORIES by design, because a commit is made from the index git names in GIT_INDEX_FILE (its gitEnv() copies process.env minus every other GIT_ name); its one finding, scripts/secret-gate.mjs:66 (the execFileSync in gitIn, which takes process.env without gitEnv()), is the census finding; the spawn at :81 reads clean to the census. REMOVE when the canon gate builds its env from named keys',
+    why: 'canon secret gate (.github templates/published-code, 609d86b): keeps GIT_INDEX_FILE and GIT_CEILING_DIRECTORIES by design, because a commit is made from the index git names in GIT_INDEX_FILE (its gitEnv() copies process.env minus every other GIT_ name); its one census finding is scripts/secret-gate.mjs:66; the spawn at :81 takes the same gitEnv() and is not counted, because the census reads only spawnSync and execFileSync. REMOVE when the canon gate builds its env from named keys',
   },
 ];
 

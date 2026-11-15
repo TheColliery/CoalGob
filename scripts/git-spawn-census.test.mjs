@@ -10,13 +10,13 @@ import { scanGitSpawns, collectScriptsMjs, gitBlobId } from './lib/git-env-censu
 
 const ROOM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-// The one carrier whose spawns the census cannot read, pinned with its reason. It is a byte-equal copy of a house source, so the room cannot fix it room-side.
+// The one carrier the census flags, pinned with its reason: the spawn at :66 is its one finding, the spawn at :81 reads clean. It is a byte-equal copy of a house source, so the room cannot fix it room-side.
 // (scripts/secret-scan.test.mjs was the second carrier until 09b: the source's new file, Bankfire bd328f2 a0319dcd, builds every child environment from named keys and reads clean with no pin.)
 const PINS = [
   {
     rel: 'scripts/secret-gate.mjs',
-    blob: '4bf977178dffc6045af9ff2bae4ed78273fcc80c',
-    why: 'canon secret gate (.github templates/published-code): keeps GIT_INDEX_FILE and GIT_CEILING_DIRECTORIES by design, because a commit is made from the index git names in GIT_INDEX_FILE (its gitEnv() copies process.env minus every other GIT_ name); its two spawns, scripts/secret-gate.mjs:62 and :67, are the findings. REMOVE when the canon gate builds its env from named keys',
+    blob: '175f0a52e7d2b48f2c6fce7d46e70739decb1a53',
+    why: 'canon secret gate (.github templates/published-code, 609d86b): keeps GIT_INDEX_FILE and GIT_CEILING_DIRECTORIES by design, because a commit is made from the index git names in GIT_INDEX_FILE (its gitEnv() copies process.env minus every other GIT_ name); its one finding, scripts/secret-gate.mjs:66 (the execFileSync in gitIn, which takes process.env without gitEnv()), is the census finding; the spawn at :81 reads clean to the census. REMOVE when the canon gate builds its env from named keys',
   },
 ];
 
@@ -31,11 +31,11 @@ test('every git spawn under scripts/ takes a clean environment: no findings with
   assert.ok(r.files >= 15 && r.calls >= 5, `the scan is not vacuous (files ${r.files}, calls ${r.calls})`);
 });
 
-test('red-first: without the pin the same tree fails, and the findings are exactly the secret gate\'s two spawns', () => {
+test('red-first: without the pin the same tree fails, and the findings are exactly the secret gate\'s one spawn', () => {
   const r = scanGitSpawns(files(), []);
   const byFile = {};
   for (const f of r.findings) byFile[f.split(':')[0]] = (byFile[f.split(':')[0]] || 0) + 1;
-  assert.deepEqual(byFile, { 'scripts/secret-gate.mjs': 2 });
+  assert.deepEqual(byFile, { 'scripts/secret-gate.mjs': 1 });
 });
 
 test('the scanner test reads clean with NO pin: its git spawns are counted and every one takes a named-key environment (the pin it needed at 09a is gone)', () => {

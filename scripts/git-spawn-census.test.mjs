@@ -15,8 +15,8 @@ const ROOM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PINS = [
   {
     rel: 'scripts/secret-gate.mjs',
-    blob: '175f0a52e7d2b48f2c6fce7d46e70739decb1a53',
-    why: 'canon secret gate (.github templates/published-code, 609d86b): keeps GIT_INDEX_FILE and GIT_CEILING_DIRECTORIES by design, because a commit is made from the index git names in GIT_INDEX_FILE (its gitEnv() copies process.env minus every other GIT_ name); its one census finding is scripts/secret-gate.mjs:66; the spawn at :81 takes the same gitEnv() and is not counted, because the census reads only spawnSync and execFileSync. REMOVE when the canon gate builds its env from named keys',
+    blob: '33e8a4ae82683316832bbdc1100a56eabc65ee62',
+    why: 'canon secret gate (.github templates/published-code, a7161df): keeps GIT_INDEX_FILE and GIT_CEILING_DIRECTORIES by design, because a commit is made from the index git names in GIT_INDEX_FILE (its gitEnv() copies process.env minus every other GIT_ name); its one census finding is scripts/secret-gate.mjs:66; the spawn at :81 takes the same gitEnv() and is not counted, because the census reads only spawnSync and execFileSync. REMOVE when the canon gate builds its env from named keys',
   },
 ];
 

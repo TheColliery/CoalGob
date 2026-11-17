@@ -10,13 +10,13 @@ import { scanGitSpawns, collectScriptsMjs, gitBlobId } from './lib/git-env-censu
 
 const ROOM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-// The one carrier the census flags, pinned with its reason: the spawn at :66 is its one finding; the spawn at :81 takes the same gitEnv() and is not counted, because the census reads only spawnSync and execFileSync. It is a byte-equal copy of a house source, so the room cannot fix it room-side.
+// The one carrier the census flags, pinned with its reason: the spawn at :66 is its one finding; the spawn at :89 takes the same gitEnv() and is not counted, because the census reads only spawnSync and execFileSync. It is a byte-equal copy of a house source, so the room cannot fix it room-side.
 // (scripts/secret-scan.test.mjs was the second carrier until 09b: the source's new file, Bankfire bd328f2 a0319dcd, builds every child environment from named keys and reads clean with no pin.)
 const PINS = [
   {
     rel: 'scripts/secret-gate.mjs',
-    blob: '33e8a4ae82683316832bbdc1100a56eabc65ee62',
-    why: 'canon secret gate (.github templates/published-code, a7161df): keeps GIT_INDEX_FILE and GIT_CEILING_DIRECTORIES by design, because a commit is made from the index git names in GIT_INDEX_FILE (its gitEnv() copies process.env minus every other GIT_ name); its one census finding is scripts/secret-gate.mjs:66; the spawn at :81 takes the same gitEnv() and is not counted, because the census reads only spawnSync and execFileSync. REMOVE when the canon gate builds its env from named keys',
+    blob: '0dd7e4e1f3ce9cf64a9a787836cf82ed47f95d44',
+    why: 'canon secret gate (.github templates/published-code, 03438a1): keeps GIT_INDEX_FILE and GIT_CEILING_DIRECTORIES by design, because a commit is made from the index git names in GIT_INDEX_FILE (its gitEnv() copies process.env minus every other GIT_ name); its one census finding is scripts/secret-gate.mjs:66; the spawn at :89 takes the same gitEnv() and is not counted, because the census reads only spawnSync and execFileSync. REMOVE when the canon gate builds its env from named keys',
   },
 ];
 

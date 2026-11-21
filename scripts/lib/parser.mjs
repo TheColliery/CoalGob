@@ -658,7 +658,12 @@ function resolveVerb(words) {
       // canonical form already works via ordinary segmentation - the
       // `;` there is a real separator, so `do` starts its OWN segment
       // and never reaches this branch at all).
-      const doIdx = words.findIndex((w, i) => i > idx && !w.quoted && w.value.toLowerCase() === 'do');
+      // The scan starts after `for`: from word 0 it rescanned every consumed word, quadratic over a chain (CG-17).
+      let doIdx = -1;
+      for (let i = idx + 1; i < words.length; i++) {
+        work.forLookaheadWords++;
+        if (!words[i].quoted && words[i].value.toLowerCase() === 'do') { doIdx = i; break; }
+      }
       if (doIdx !== -1) {
         idx = doIdx + 1;
         consumedPrefix = true;
@@ -1761,9 +1766,9 @@ function isSecondaryCandidateNamedVerb(words, idx) {
 // for this segment; re-checking them for a secondary candidate can
 // never newly fire.
 // Test hook (29a bounce 1): words copied by the secondary walk, read by the tests only through the two exports below.
-const work = { secondaryWords: 0 };
+const work = { secondaryWords: 0, forLookaheadWords: 0 };
 export function _workCountForTests(kind) { return work[kind]; }
-export function _resetWorkCountForTests() { work.secondaryWords = 0; }
+export function _resetWorkCountForTests() { work.secondaryWords = 0; work.forLookaheadWords = 0; }
 
 function secondaryCandidateVerdict(words, idx, heredoc, fdOutOfScope, precededByPipe) {
   if (isSecondaryCandidateNamedVerb(words, idx)) {

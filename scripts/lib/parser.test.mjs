@@ -4438,3 +4438,33 @@ test('parses a long run of unrecognised words with secondary-walk work linear in
     `doubling the run may at most double the words copied (small ${small}, large ${large})`,
   );
 });
+
+test('the for-do lookahead inspects each word a bounded number of times, so its work is linear in a chain of for x do', () => {
+  // CG-17: a lookahead that restarted from word 0 rescanned every consumed word, so its work grew with the square of the chain.
+  const FOR_LOOKAHEAD_SLACK_WORDS = 8;
+  const chain = (n) => 'for x do '.repeat(n) + 'rm -rf build';
+  const visits = (n) => {
+    _resetWorkCountForTests();
+    parseCommand(chain(n));
+    return _workCountForTests('forLookaheadWords');
+  };
+  const small = visits(200);
+  const large = visits(400);
+  assert.ok(small > 0, 'the lookahead runs on a chain of for x do');
+  assert.ok(
+    large <= 2 * small + FOR_LOOKAHEAD_SLACK_WORDS,
+    `doubling the chain may at most double the lookahead's word visits (small ${small}, large ${large})`,
+  );
+});
+
+test('a chain of for x do ending in rm -rf build keeps its DESTRUCTION verdict at every length', () => {
+  for (const n of [1, 2, 3]) {
+    const r = parseCommand('for x do '.repeat(n) + 'rm -rf build');
+    assert.equal(r.verdict, 'DESTRUCTION', `length ${n}`);
+    assert.deepEqual(
+      r.findings,
+      [{ verdict: 'DESTRUCTION', verb: 'rm', target: 'build', conditional: false }],
+      `length ${n}`,
+    );
+  }
+});

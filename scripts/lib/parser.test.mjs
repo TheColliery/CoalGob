@@ -4468,3 +4468,18 @@ test('a chain of for x do ending in rm -rf build keeps its DESTRUCTION verdict a
     );
   }
 });
+
+// CG-T5: these two answer only through the secondary walk's classify path (after the 29a filter), so the walk must reach it.
+test('sudo frob npx rimraf dist is OUT_OF_SCOPE as an unrouted destroyer, through the secondary walk', () => {
+  assert.deepEqual(parseCommand('sudo frob npx rimraf dist'), {
+    verdict: 'OUT_OF_SCOPE',
+    findings: [{ verdict: 'OUT_OF_SCOPE', reason: 'npx rimraf is a direct destroyer this parser does not route', kind: 'unrouted' }],
+  });
+});
+
+test('sudo frob make clean is OUT_OF_SCOPE as a declared scope boundary, through the secondary walk', () => {
+  assert.deepEqual(parseCommand('sudo frob make clean'), {
+    verdict: 'OUT_OF_SCOPE',
+    findings: [{ verdict: 'OUT_OF_SCOPE', reason: 'make target may run arbitrary destructive rules', kind: 'declared' }],
+  });
+});
